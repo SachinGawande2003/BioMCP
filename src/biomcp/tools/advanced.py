@@ -42,6 +42,17 @@ GEO_BASE        = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
 HCA_BASE        = "https://service.azul.data.humancellatlas.org"
 
 
+# ClinicalTrials.gov blocks generic User-Agents — must use a browser-like UA
+_CT_HEADERS: dict[str, str] = {
+    "Accept":          "application/json",
+    "User-Agent":      (
+        "Mozilla/5.0 (compatible; BioMCP/1.0; "
+        "+https://github.com/SachinGawande2003/biomcp)"
+    ),
+    "Accept-Language": "en-US,en;q=0.9",
+}
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # ClinicalTrials.gov — search
 # ─────────────────────────────────────────────────────────────────────────────
@@ -105,8 +116,18 @@ async def search_clinical_trials(
     resp = await client.get(
         f"{CLINTRIALS_BASE}/studies",
         params=params,
-        headers={"Accept": "application/json"},
+        headers=_CT_HEADERS,
     )
+
+    if resp.status_code == 403:
+        return {
+            "error": (
+                "ClinicalTrials.gov returned 403 Forbidden. "
+                "This is usually temporary IP rate-limiting. "
+                "Wait 60 seconds and retry, or visit https://clinicaltrials.gov/search directly."
+            ),
+            "query": query, "studies": [], "total_found": 0,
+        }
     resp.raise_for_status()
     data = resp.json()
 
@@ -181,8 +202,10 @@ async def get_trial_details(nct_id: str) -> dict[str, Any]:
     resp = await client.get(
         f"{CLINTRIALS_BASE}/studies/{nct_id}",
         params={"format": "json"},
-        headers={"Accept": "application/json"},
+        headers=_CT_HEADERS,
     )
+    if resp.status_code == 403:
+        return {"error": "ClinicalTrials.gov returned 403 — please retry in 60 seconds."}
     if resp.status_code == 404:
         return {"error": f"Trial '{nct_id}' not found in ClinicalTrials.gov."}
     resp.raise_for_status()
