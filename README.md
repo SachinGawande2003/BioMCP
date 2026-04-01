@@ -1,18 +1,18 @@
-# 🧬 Heuris-Heuris-BioMCP — Bioinformatics Model Context Protocol Server
+# 🧬 Heuris-BioMCP — Bioinformatics Model Context Protocol Server
 
 <div align="center">
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![MCP Compatible](https://img.shields.io/badge/MCP-Compatible-green.svg)](https://modelcontextprotocol.io)
-[![Tools: 52](https://img.shields.io/badge/Tools-52-blue.svg)](#tools-52-total)
+[![Tools: 59](https://img.shields.io/badge/Tools-59-blue.svg)](#tools-59-total)
 [![Databases: 20+](https://img.shields.io/badge/Databases-20+-purple.svg)](#databases--ai-models)
 [![Live Demo](https://img.shields.io/badge/Live-Demo-brightgreen)](https://heuris-biomcp.onrender.com)
 
 **The most comprehensive Model Context Protocol server for life sciences v2.**  
 Connect Claude to every major biological database and state-of-the-art AI models — no API wrappers, no copy-pasting, just science.
 
-[🚀 Quick Start](#quick-start) • [🔧 Tools](#tools-52-total) • [📊 Databases](#databases--ai-models) • [💡 Examples](#usage-examples) • [🤝 Contributing](#contributing)
+[🚀 Quick Start](#quick-start) • [🔧 Tools](#tools-59-total) • [📊 Databases](#databases--ai-models) • [💡 Examples](#usage-examples) • [🤝 Contributing](#contributing)
 
 </div>
 
@@ -33,7 +33,7 @@ Add to your `claude_desktop_config.json`:
 ```json
 {
   "mcpServers": {
-    "biomcp": {
+    "heuris-biomcp": {
       "url": "https://heuris-biomcp.onrender.com/sse"
     }
   }
@@ -176,6 +176,30 @@ Claude + Heuris-BioMCP → Queries ChEMBL + ClinicalTrials.gov simultaneously �
 | `export_research_session` | Full provenance + citations + reproducible Python script |
 | `plan_and_execute_research` | DAG-based adaptive research workflow planner |
 
+### 🧬 CRISPR Design Suite (5 tools)
+| Tool | Description |
+|------|-------------|
+| `design_crispr_guides` | Design CRISPR sgRNA guides with Doench 2016 efficiency scoring |
+| `score_guide_efficiency` | Score user-provided sgRNA using multi-feature model |
+| `predict_off_target_sites` | Predict off-target risk using seed-region analysis |
+| `design_base_editor_guides` | Design guides for CBE/ABE base editing |
+| `get_crispr_repair_outcomes` | Predict NHEJ/HDR outcomes and knockout probability |
+
+### 💉 FDA Drug Safety Intelligence (4 tools)
+| Tool | Description |
+|------|-------------|
+| `query_adverse_events` | Query FDA FAERS for drug safety signals |
+| `analyze_safety_signals` | Pharmacovigilance disproportionality analysis (PRR, ROR, IC) |
+| `get_drug_label_warnings` | Retrieve FDA label safety sections from DailyMed |
+| `compare_drug_safety` | Head-to-head safety comparison between drugs |
+
+### 🧪 Variant Interpreter (3 tools)
+| Tool | Description |
+|------|-------------|
+| `classify_variant` | ACMG/AMP 2015 guideline-based variant classification |
+| `get_population_frequency` | Query gnomAD v4 for population-specific allele frequencies |
+| `lookup_clinvar_variant` | Search ClinVar for clinical significance and submissions |
+
 ---
 
 ## Databases & AI Models
@@ -222,7 +246,7 @@ Add to your Claude Desktop config:
 ```json
 {
   "mcpServers": {
-    "biomcp": {
+    "heuris-biomcp": {
       "url": "https://heuris-biomcp.onrender.com/sse"
     }
   }
@@ -274,7 +298,7 @@ pip install -e ".[dev]"
 ```json
 {
   "mcpServers": {
-    "biomcp": {
+    "heuris-biomcp": {
       "command": "biomcp",
       "env": {
         "NCBI_API_KEY": "your_ncbi_api_key_here"
@@ -289,7 +313,7 @@ pip install -e ".[dev]"
 ```json
 {
   "mcpServers": {
-    "biomcp": {
+    "heuris-biomcp": {
       "url": "https://heuris-biomcp.onrender.com/sse"
     }
   }
