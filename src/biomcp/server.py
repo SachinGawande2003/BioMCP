@@ -1203,11 +1203,23 @@ async def _dispatch(name: str, args: dict[str, Any]) -> str:
 
 
 def create_server() -> Server:
+    from mcp.types import Icon
+    import os
+
+    logo_path = os.path.join(os.path.dirname(__file__), "..", "..", "LOGO.jpeg")
+    icon_data = None
+    if os.path.exists(logo_path):
+        import base64
+
+        with open(logo_path, "rb") as f:
+            icon_data = [Icon(src=f"data:image/jpeg;base64,{base64.b64encode(f.read()).decode()}")]
+
     server = Server(
         "biomcp",
         version="2.0.0",
         instructions="BioMCP v2 - Connect Claude to 20+ biological databases and AI models. Tools include PubMed, UniProt, AlphaFold, ChEMBL, NVIDIA Boltz-2, and more.",
         website_url="https://github.com/SachinGawande2003/BioMCP",
+        icons=icon_data,
     )
 
     @server.list_tools()
