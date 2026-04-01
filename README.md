@@ -5,13 +5,13 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![MCP Compatible](https://img.shields.io/badge/MCP-Compatible-green.svg)](https://modelcontextprotocol.io)
-[![Tools: 27](https://img.shields.io/badge/Tools-27-blue.svg)](#tools-27-total)
-[![Databases: 15+](https://img.shields.io/badge/Databases-15+-purple.svg)](#databases)
+[![Tools: 42](https://img.shields.io/badge/Tools-42-blue.svg)](#tools-42-total)
+[![Databases: 20+](https://img.shields.io/badge/Databases-20+-purple.svg)](#databases--ai-models)
 
-**The most comprehensive Model Context Protocol server for life sciences.**  
+**The most comprehensive Model Context Protocol server for life sciences v2.**  
 Connect Claude to every major biological database and state-of-the-art AI models — no API wrappers, no copy-pasting, just science.
 
-[🚀 Quick Start](#quick-start) • [🔧 Tools](#tools-27-total) • [📊 Databases](#databases) • [💡 Examples](#usage-examples) • [🤝 Contributing](#contributing)
+[🚀 Quick Start](#quick-start) • [🔧 Tools](#tools-47-total) • [📊 Databases](#databases--ai-models) • [💡 Examples](#usage-examples) • [🤝 Contributing](#contributing)
 
 </div>
 
@@ -19,7 +19,7 @@ Connect Claude to every major biological database and state-of-the-art AI models
 
 ## What is BioMCP?
 
-BioMCP bridges Claude and the world's life sciences databases through the [Model Context Protocol](https://modelcontextprotocol.io). Ask Claude to **search PubMed**, **predict protein structure** with AI, **generate DNA sequences**, **find drug targets**, **query clinical trials**, **analyze single-cell data**, or **generate research hypotheses** — all in natural language, all in real time.
+BioMCP bridges Claude and the world's life sciences databases through the [Model Context Protocol](https://modelcontextprotocol.io). Ask Claude to **search PubMed**, **predict protein structure** with AI, **generate DNA sequences**, **find drug targets**, **query clinical trials**, **analyze single-cell data**, **verify biological claims**, or **generate research hypotheses** — all in natural language, all in real time.
 
 ```
 You → "What drugs target EGFR and what clinical trials are recruiting?"
@@ -28,7 +28,20 @@ Claude + BioMCP → Queries ChEMBL + ClinicalTrials.gov simultaneously → Struc
 
 ---
 
-## Tools (27 total)
+## What's New in v2
+
+- **Extended Databases**: 7 new database integrations (OMIM, STRING, GTEx, cBioPortal, GWAS Catalog, DisGeNET, PharmGKB)
+- **Biological Claim Verification**: Verify claims against multiple databases with evidence grading
+- **Conflict Detection**: Identify inconsistencies across databases
+- **Experimental Design**: Generate protocols, suggest cell lines, calculate statistical power
+- **Session Knowledge Graph**: Auto-built entity graph from all tool calls
+- **Entity Resolution**: Canonical IDs across HGNC/UniProt/Ensembl/NCBI
+- **Adaptive Query Planner**: Dependency-aware parallel execution DAG
+- **Reproducibility Export**: Full provenance + citations + reproducible script generation
+
+---
+
+## Tools (42 total)
 
 ### 📚 Literature & NCBI
 | Tool | Description |
@@ -87,6 +100,39 @@ Claude + BioMCP → Queries ChEMBL + ClinicalTrials.gov simultaneously → Struc
 | `query_neuroimaging_datasets` | OpenNeuro + NeuroVault: fMRI/EEG/MEG datasets with acquisition metadata |
 | `generate_research_hypothesis` | Literature mining → data-driven testable hypotheses with supporting evidence |
 
+### 🗄️ Extended Databases (v2)
+| Tool | Description |
+|------|-------------|
+| `get_omim_gene_diseases` | OMIM: gene-disease relationships, inheritance patterns, phenotypes |
+| `get_string_interactions` | STRING: protein-protein interactions with confidence scores |
+| `get_gtex_expression` | GTEx: gene expression by tissue with TPM/FPKM values |
+| `search_cbio_mutations` | cBioPortal: cancer genomics mutations, copy number alterations |
+| `search_gwas_catalog` | GWAS Catalog: trait-associated SNPs with p-values and effect sizes |
+| `get_disgenet_associations` | DisGeNET: gene-disease associations with evidence scores |
+| `get_pharmgkb_variants` | PharmGKB: pharmacogenomic variants and drug responses |
+
+### ✅ Verification & Conflict Detection (v2)
+| Tool | Description |
+|------|-------------|
+| `verify_biological_claim` | Verify claims against multiple databases with graded evidence (strong/moderate/weak/contradicted) |
+| `detect_database_conflicts` | Identify inconsistencies across databases with conflict resolution suggestions |
+
+### 🧬 Experimental Design (v2)
+| Tool | Description |
+|------|-------------|
+| `generate_experimental_protocol` | Generate step-by-step experimental protocols with controls and timelines |
+| `suggest_cell_lines` | Recommend appropriate cell lines based on research goals |
+| `estimate_statistical_power` | Calculate statistical power and sample size requirements |
+
+### 🧠 Session Intelligence (v2)
+| Tool | Description |
+|------|-------------|
+| `resolve_entity` | Canonical cross-database entity resolution (HGNC/UniProt/Ensembl/NCBI) |
+| `get_session_knowledge_graph` | Live entity graph auto-built from all tool calls in session |
+| `find_biological_connections` | Discover cross-database connections between entities |
+| `export_research_session` | Full provenance + citations + reproducible Python script |
+| `plan_and_execute_research` | DAG-based adaptive research workflow planner |
+
 ---
 
 ## Databases & AI Models
@@ -110,6 +156,14 @@ Claude + BioMCP → Queries ChEMBL + ClinicalTrials.gov simultaneously → Struc
 | Human Cell Atlas | Single-Cell | https://data.humancellatlas.org |
 | OpenNeuro | Neuroimaging | https://openneuro.org |
 | NeuroVault | Neuroimaging | https://neurovault.org |
+| **v2 Extended Databases** |
+| OMIM | Genetic Diseases | https://www.omim.org |
+| STRING | Protein Interactions | https://string-db.org |
+| GTEx | Expression Atlas | https://gtexportal.org |
+| cBioPortal | Cancer Genomics | https://www.cbioportal.org |
+| GWAS Catalog | Trait Associations | https://www.ebi.ac.uk/gwas |
+| DisGeNET | Disease-Gene | https://www.disgenet.org |
+| PharmGKB | Pharmacogenomics | https://www.pharmgkb.org |
 | **AI Models (NVIDIA NIM)** |
 | MIT Boltz-2 | Structure Prediction | https://build.nvidia.com/mit/boltz2 |
 | Arc Evo2-40B | DNA Generation | https://build.nvidia.com/arc/evo2-40b |
@@ -137,7 +191,7 @@ pip install -e .
 # Install with neuroimaging support
 pip install -e ".[neuroimaging]"
 
-# Install with dev dependencies
+# Install with dev dependencies (recommended)
 pip install -e ".[dev]"
 ```
 
@@ -228,16 +282,34 @@ This single command queries **7 databases in parallel** and returns:
 - Expression datasets (GEO)
 - Active clinical trials (ClinicalTrials.gov)
 
-### Clinical Research
+### v2 Extended Databases
 ```
-"Find Phase 2 recruiting trials for KRAS-mutant non-small cell lung cancer"
-"Get full details for clinical trial NCT04280705"
+"Get OMIM diseases associated with TP53"
+"Show STRING protein interactions for EGFR"
+"Get GTEx expression data for BRCA1 across tissues"
+"Find mutations in TP53 from cBioPortal"
+"Search GWAS for diabetes-associated SNPs"
 ```
 
-### Neuroimaging
+### v2 Verification
 ```
-"Find fMRI datasets for hippocampus in Alzheimer's disease"
-"Search for EEG datasets studying working memory in prefrontal cortex"
+"Verify the claim that TP53 is a tumor suppressor gene"
+"Detect conflicts between OMIM and DisGeNET for BRCA1"
+```
+
+### v2 Experimental Design
+```
+"Generate an experimental protocol for CRISPR knockout of BRCA1"
+"What cell lines should I use to study KRAS mutations?"
+"Calculate sample size for detecting 2-fold change with p<0.05"
+```
+
+### v2 Session Intelligence
+```
+"What's the knowledge graph from our conversation so far?"
+"Find biological connections between TP53 and EGFR"
+"Export our research session as a reproducible script"
+"Plan and execute a research workflow for PD-1 drug targets"
 ```
 
 ---
@@ -247,16 +319,24 @@ This single command queries **7 databases in parallel** and returns:
 ```
 biomcp/
 ├── src/biomcp/
-│   ├── server.py          # MCP server — tool registry & dispatcher
+│   ├── server.py              # MCP server — tool registry & dispatcher
 │   ├── tools/
-│   │   ├── ncbi.py        # PubMed, Gene, BLAST
-│   │   ├── proteins.py    # UniProt, AlphaFold, PDB
-│   │   ├── pathways.py    # KEGG, Reactome, ChEMBL, Open Targets
-│   │   ├── advanced.py    # ClinicalTrials, GEO, scRNA, Ensembl,
-│   │   │                  # Multi-Omics, Neuroimaging, Hypothesis
-│   │   └── nvidia_nim.py  # Boltz-2, Evo2-40B AI models
+│   │   ├── ncbi.py            # PubMed, Gene, BLAST
+│   │   ├── proteins.py        # UniProt, AlphaFold, PDB
+│   │   ├── pathways.py        # KEGG, Reactome, ChEMBL, Open Targets
+│   │   ├── advanced.py        # ClinicalTrials, GEO, scRNA, Ensembl,
+│   │   │                      # Multi-Omics, Neuroimaging, Hypothesis
+│   │   ├── nvidia_nim.py      # Boltz-2, Evo2-40B AI models
+│   │   ├── databases.py       # v2: OMIM, STRING, GTEx, cBioPortal,
+│   │   │                      #      GWAS, DisGeNET, PharmGKB
+│   │   ├── verify.py          # v2: Claim verification, conflict detection
+│   │   └── protocol_generator.py  # v2: Experimental design tools
+│   ├── core/
+│   │   ├── entity_resolver.py # v2: Cross-database entity resolution
+│   │   ├── knowledge_graph.py # v2: Session knowledge graph
+│   │   └── query_planner.py   # v2: Adaptive query planner
 │   └── utils/
-│       └── __init__.py    # Rate limiter, cache, validators, HTTP client
+│       └── __init__.py        # Rate limiter, cache, validators, HTTP client
 ├── tests/
 ├── pyproject.toml
 └── README.md
@@ -304,12 +384,12 @@ mypy src/
 ```
 
 ### Ideas for contributions
-- Add OMIM (genetic disease database) integration
-- Integrate STRING protein interaction network
-- Add PanCancer Atlas data access
-- Improve scRNA-seq analysis beyond dataset discovery
-- Add GTEx gene expression by tissue
-- Integrate DisGeNET for disease-gene associations
+- Add more pathway databases (Wikipathways, PathCards)
+- Integrate COSMIC for somatic mutations
+- Add protein complex data (CORUM)
+- Implement batch query support for high-throughput analysis
+- Add Jupyter notebook examples
+- Improve conflict resolution algorithms
 
 ---
 
@@ -319,7 +399,7 @@ If you use BioMCP in your research, please cite:
 
 ```bibtex
 @software{biomcp2025,
-  title   = {BioMCP: A Comprehensive MCP Server for Bioinformatics, AI Models, and Life Sciences},
+  title   = {BioMCP v2: A Comprehensive MCP Server for Bioinformatics, AI Models, and Life Sciences},
   year    = {2025},
   url     = {https://github.com/SachinGawande2003/biomcp},
   license = {MIT}
