@@ -14,8 +14,10 @@ APIs:
 from __future__ import annotations
 
 import asyncio
+import io
 import json
 import xml.etree.ElementTree as ET
+import zipfile
 from typing import Any
 
 from loguru import logger
@@ -315,10 +317,15 @@ async def run_blast(
     submit.raise_for_status()
 
     rid: str | None = None
+    rtoe: int | None = None
     for line in submit.text.splitlines():
         if line.strip().startswith("RID = "):
             rid = line.split("=", 1)[1].strip()
-            break
+        elif line.strip().startswith("RTOE = "):
+            try:
+                rtoe = int(line.split("=", 1)[1].strip())
+            except ValueError:
+                rtoe = None
 
     if not rid:
         raise RuntimeError(
@@ -329,21 +336,45 @@ async def run_blast(
     logger.info(f"BLAST submitted: RID={rid} program={program} db={database}")
 
     # ── Poll (max 120 s) ──────────────────────────────────────────────────────
-    for attempt in range(24):
-        await asyncio.sleep(5)
+    poll_interval_s = 5
+    if rtoe:
+        await asyncio.sleep(min(max(rtoe, poll_interval_s), 60))
+
+    max_wait_s = max(120, min((rtoe or 30) * 6, 300))
+    max_attempts = max(1, max_wait_s // poll_interval_s)
+
+    for attempt in range(max_attempts):
+        await asyncio.sleep(poll_interval_s)
         poll = await client.get(
             BLAST_BASE,
             params={"CMD": "Get", "FORMAT_OBJECT": "SearchInfo", "RID": rid},
         )
         text = poll.text
         if "Status=READY" in text:
-            logger.info(f"BLAST ready after {(attempt + 1) * 5}s")
+            logger.info(f"BLAST ready after {(attempt + 1) * poll_interval_s}s")
             break
         if "Status=FAILED" in text or "Status=UNKNOWN" in text:
             raise RuntimeError(f"BLAST job {rid} failed on NCBI servers.")
         logger.debug(f"BLAST polling ({attempt + 1}/24)…")
     else:
-        raise TimeoutError(f"BLAST job {rid} timed out after 120 s. Try a shorter sequence.")
+        logger.warning(
+            f"BLAST job {rid} still processing after {max_wait_s}s; returning pending status."
+        )
+        return {
+            "status":       "pending",
+            "rid":          rid,
+            "program":      program,
+            "database":     database,
+            "query_length": len(sequence),
+            "total_hits":   0,
+            "hits":         [],
+            "statistics":   {},
+            "message": (
+                f"BLAST job {rid} is still processing on NCBI after {max_wait_s} s. "
+                "Retry later with the returned RID."
+            ),
+            "retry_after_s": max(rtoe or 30, 30),
+        }
 
     # ── Fetch JSON2 results ───────────────────────────────────────────────────
     result = await client.get(
@@ -351,7 +382,38 @@ async def run_blast(
         params={"CMD": "Get", "FORMAT_TYPE": "JSON2", "RID": rid},
     )
     result.raise_for_status()
-    return _parse_blast_json2(result.text, rid, program, database)
+    raw_result = _extract_blast_result_text(result, rid)
+    return _parse_blast_json2(raw_result, rid, program, database)
+
+
+def _extract_blast_result_text(response: Any, rid: str) -> str:
+    """Normalize current NCBI BLAST result formats into JSON text."""
+    raw_bytes = getattr(response, "content", None)
+    if not isinstance(raw_bytes, (bytes, bytearray)):
+        text = getattr(response, "text", "")
+        raw_bytes = text.encode("utf-8", errors="replace") if isinstance(text, str) else b""
+
+    if raw_bytes and zipfile.is_zipfile(io.BytesIO(raw_bytes)):
+        with zipfile.ZipFile(io.BytesIO(raw_bytes)) as archive:
+            for name in archive.namelist():
+                payload = archive.read(name)
+                if name.lower().endswith(".json") or payload.lstrip().startswith((b"{", b"[")):
+                    return payload.decode("utf-8", errors="replace")
+        raise RuntimeError(f"BLAST job {rid} returned a ZIP archive without a JSON payload.")
+
+    text = raw_bytes.decode("utf-8", errors="replace") if raw_bytes else ""
+    stripped = text.lstrip().lower()
+    if stripped.startswith("<!doctype html") or stripped.startswith("<html"):
+        if "Status=WAITING" in text:
+            raise RuntimeError(f"BLAST job {rid} is still processing on NCBI servers. Retry shortly.")
+        if "Status=FAILED" in text or "Status=UNKNOWN" in text:
+            raise RuntimeError(f"BLAST job {rid} failed on NCBI servers.")
+        raise RuntimeError(
+            f"BLAST job {rid} returned HTML instead of JSON. "
+            "NCBI may have changed the response format or the job is still processing."
+        )
+
+    return text
 
 
 def _parse_blast_json2(

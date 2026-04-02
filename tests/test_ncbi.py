@@ -6,6 +6,9 @@ Unit tests for PubMed search, Gene info, and BLAST.
 
 from __future__ import annotations
 
+import io
+import json
+import zipfile
 from unittest.mock import AsyncMock, patch, MagicMock
 
 import pytest
@@ -85,6 +88,89 @@ async def test_get_gene_info_parses_response(mock_http_client, mock_http_respons
     assert result["symbol"] == "TP53"
     assert result["chromosome"] == "17"
     assert "tumor" in result.get("summary", "").lower()
+
+
+@pytest.mark.asyncio
+async def test_run_blast_returns_pending_when_ncbi_stays_waiting(mock_http_client, mock_http_response):
+    submit_resp = mock_http_response(text="RID = TEST123\nRTOE = 1\n")
+    poll_resp = mock_http_response(text="Status=WAITING\n")
+
+    mock_http_client.post = AsyncMock(return_value=submit_resp)
+    mock_http_client.get = AsyncMock(side_effect=[poll_resp] * 24)
+
+    with patch("biomcp.tools.ncbi.get_http_client", return_value=mock_http_client):
+        with patch("biomcp.tools.ncbi.asyncio.sleep", new=AsyncMock()):
+            from biomcp.tools.ncbi import run_blast
+
+            result = await run_blast.__wrapped__.__wrapped__(
+                "MTEYKLVVVGAGGVGKSALTIQLIQNHF",
+                program="blastp",
+                database="swissprot",
+                max_hits=2,
+            )
+
+    assert result["status"] == "pending"
+    assert result["rid"] == "TEST123"
+    assert result["hits"] == []
+
+
+def test_blast_zip_result_parses_current_ncbi_format():
+    """BLAST parser should accept the current ZIP-wrapped JSON result format."""
+    blast_json = {
+        "BlastOutput2": [
+            {
+                "report": {
+                    "results": {
+                        "search": {
+                            "query_len": 42,
+                            "hits": [
+                                {
+                                    "description": [
+                                        {
+                                            "accession": "P04637",
+                                            "title": "Cellular tumor antigen p53",
+                                            "taxid": 9606,
+                                            "sciname": "Homo sapiens",
+                                        }
+                                    ],
+                                    "hsps": [
+                                        {
+                                            "align_len": 42,
+                                            "identity": 40,
+                                            "query_from": 1,
+                                            "query_to": 42,
+                                            "evalue": 1e-20,
+                                            "bit_score": 120.0,
+                                            "gaps": 0,
+                                            "positive": 41,
+                                        }
+                                    ],
+                                }
+                            ],
+                            "stat": {"db_num": 1},
+                        }
+                    }
+                }
+            }
+        ]
+    }
+
+    archive = io.BytesIO()
+    with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as zip_handle:
+        zip_handle.writestr("blast_result.json", json.dumps(blast_json))
+
+    response = MagicMock()
+    response.content = archive.getvalue()
+    response.text = ""
+
+    from biomcp.tools.ncbi import _extract_blast_result_text, _parse_blast_json2
+
+    raw = _extract_blast_result_text(response, "RID123")
+    result = _parse_blast_json2(raw, "RID123", "blastp", "swissprot")
+
+    assert result["rid"] == "RID123"
+    assert result["total_hits"] == 1
+    assert result["hits"][0]["accession"] == "P04637"
 
 
 # ── Integration (Network Required) ──────────────────────────────────────────

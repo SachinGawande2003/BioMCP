@@ -105,6 +105,77 @@ def _evo2_headers() -> dict[str, str]:
     }
 
 
+def _nim_error_message(resp: Any) -> str:
+    """Extract the most useful error detail from an NVIDIA NIM response."""
+    try:
+        payload = resp.json()
+    except Exception:
+        payload = None
+
+    if isinstance(payload, dict):
+        for key in ("error", "message", "detail"):
+            value = payload.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+
+    text = getattr(resp, "text", "")
+    if isinstance(text, str) and text.strip():
+        return text.strip()[:500]
+
+    return f"HTTP {getattr(resp, 'status_code', 'error')}"
+
+
+def _raise_for_nim_error(resp: Any, invalid_key_message: str) -> None:
+    """Raise a clear exception for NVIDIA NIM HTTP failures."""
+    status_code = int(getattr(resp, "status_code", 0) or 0)
+
+    if status_code == 401:
+        raise PermissionError(invalid_key_message)
+    if status_code == 402:
+        raise PermissionError(
+            "NVIDIA NIM quota exceeded. Upgrade at build.nvidia.com or wait for quota reset."
+        )
+    if status_code == 429:
+        raise RuntimeError("NVIDIA NIM rate limit exceeded. Retry shortly.")
+    if status_code >= 400:
+        raise RuntimeError(
+            f"NVIDIA NIM request failed ({status_code}): {_nim_error_message(resp)}"
+        )
+
+
+def _first_numeric(value: Any) -> float | None:
+    """Return the first numeric value from a scalar or list-like field."""
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, list):
+        for item in value:
+            if isinstance(item, (int, float)):
+                return float(item)
+    return None
+
+
+def _next_token_proxy_score(logits: Any) -> float | None:
+    """
+    Derive a deterministic proxy score from Evo2 next-token logits.
+
+    The hosted generate endpoint exposes logits for generated tokens rather
+    than a full-sequence likelihood, so we compare related sequences using the
+    maximum next-token logit.
+    """
+    if not isinstance(logits, list) or not logits:
+        return None
+
+    first_token = logits[0]
+    if not isinstance(first_token, list) or not first_token:
+        return None
+
+    numeric_values = [float(value) for value in first_token if isinstance(value, (int, float))]
+    if not numeric_values:
+        return None
+
+    return round(max(numeric_values), 6)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Boltz-2 — Structure Prediction + Binding Affinity
 # ─────────────────────────────────────────────────────────────────────────────
@@ -202,55 +273,56 @@ async def predict_structure_boltz2(
         )
 
     # ── Build request payload ─────────────────────────────────────────────────
-    sequences: list[dict] = []
+    request_notes: list[str] = []
+    if predict_affinity:
+        request_notes.append(
+            "The hosted Boltz-2 API no longer accepts a predict_affinity flag. "
+            "Affinity outputs are returned automatically when available for protein-ligand inputs."
+        )
+    if method_conditioning:
+        request_notes.append(
+            "method_conditioning is not supported by the hosted Boltz-2 API and was ignored."
+        )
+    if pocket_residues:
+        request_notes.append(
+            "pocket_residues is not supported by the hosted Boltz-2 API and was ignored."
+        )
+
+    polymers: list[dict[str, Any]] = []
 
     for i, seq in enumerate(validated_proteins):
-        sequences.append({
-            "protein": {
-                "id":       chr(65 + i),   # A, B, C, ...
-                "sequence": seq,
-            }
-        })
-
-    for i, smiles in enumerate(ligand_smiles):
-        sequences.append({
-            "ligand": {
-                "id":     f"LIG{i + 1}",
-                "smiles": smiles,
-            }
+        polymers.append({
+            "id":            chr(65 + i),
+            "molecule_type": "protein",
+            "sequence":      seq,
         })
 
     for i, seq in enumerate(dna_sequences):
-        sequences.append({
-            "dna": {
-                "id":       f"DNA{i + 1}",
-                "sequence": BioValidator.validate_sequence(seq, "nucleotide"),
-            }
+        polymers.append({
+            "id":            f"DNA{i + 1}",
+            "molecule_type": "dna",
+            "sequence":      BioValidator.validate_sequence(seq, "nucleotide"),
         })
 
     for i, seq in enumerate(rna_sequences):
-        sequences.append({
-            "rna": {
-                "id":       f"RNA{i + 1}",
-                "sequence": BioValidator.validate_sequence(seq, "nucleotide"),
-            }
+        polymers.append({
+            "id":            f"RNA{i + 1}",
+            "molecule_type": "rna",
+            "sequence":      BioValidator.validate_sequence(seq, "nucleotide"),
         })
 
     payload: dict[str, Any] = {
-        "sequences":          sequences,
-        "predict_affinity":   predict_affinity,
-        "recycling_steps":    recycling_steps,
-        "sampling_steps":     sampling_steps,
-        "diffusion_samples":  diffusion_samples,
-        "output_format":      "mmcif",
-        "return_runtime_metrics": True,
+        "polymers":          polymers,
+        "recycling_steps":   recycling_steps,
+        "sampling_steps":    sampling_steps,
+        "diffusion_samples": diffusion_samples,
     }
 
-    if method_conditioning:
-        payload["method_conditioning"] = method_conditioning
-
-    if pocket_residues:
-        payload["pocket_conditioning"] = pocket_residues
+    if ligand_smiles:
+        payload["ligands"] = [
+            {"id": f"LIG{i + 1}", "smiles": smiles}
+            for i, smiles in enumerate(ligand_smiles)
+        ]
 
     logger.info(
         f"[Boltz-2] Predicting structure: "
@@ -271,35 +343,38 @@ async def predict_structure_boltz2(
         timeout=300.0,    # Boltz-2 can take up to 5 min for large complexes
     )
 
-    if resp.status_code == 402:
-        raise PermissionError(
-            "NVIDIA NIM quota exceeded. "
-            "Upgrade at build.nvidia.com or wait for quota reset."
-        )
-    if resp.status_code == 401:
-        raise PermissionError(
-            "Invalid NVIDIA API key. Check NVIDIA_NIM_API_KEY in your .env file."
-        )
-    resp.raise_for_status()
+    _raise_for_nim_error(
+        resp,
+        "Invalid NVIDIA API key. Check NVIDIA_BOLTZ2_API_KEY in your deployment environment.",
+    )
 
     data     = resp.json()
     elapsed  = round(time.monotonic() - t_start, 2)
 
     # ── Parse response ────────────────────────────────────────────────────────
     # The NIM may return structure as base64-encoded mmcif or direct string
-    structure_raw = data.get("mmcif") or data.get("structure") or ""
+    structures = data.get("structures") or []
+    primary_structure = structures[0] if isinstance(structures, list) and structures else {}
+    structure_raw = (
+        primary_structure.get("structure")
+        or data.get("mmcif")
+        or data.get("structure")
+        or ""
+    )
     if isinstance(structure_raw, bytes):
         structure_raw = structure_raw.decode("utf-8")
-    # Sometimes returned as base64
     if structure_raw and not structure_raw.strip().startswith("data_"):
         try:
             structure_raw = base64.b64decode(structure_raw).decode("utf-8")
         except Exception:
             pass
 
-    scores    = data.get("scores", {})
-    affinity  = data.get("affinity", {})
-    runtime   = data.get("runtime_metrics", {})
+    confidence = _first_numeric(data.get("confidence_scores"))
+    ptm_score = _first_numeric(data.get("ptm_scores"))
+    iptm_score = _first_numeric(data.get("iptm_scores"))
+    per_chain_ptm = data.get("chains_ptm_scores") or {}
+    affinity = data.get("affinities") or data.get("affinity") or {}
+    runtime = data.get("metrics") or data.get("runtime_metrics") or {}
 
     result: dict[str, Any] = {
         "status":        "success",
@@ -318,14 +393,15 @@ async def predict_structure_boltz2(
         "structure": {
             "mmcif_data": structure_raw[:5_000] if structure_raw else "See full response",
             "mmcif_length_chars": len(structure_raw),
-            "format": "mmcif",
+            "format": primary_structure.get("format") or "mmcif",
+            "source": primary_structure.get("source"),
         },
         "scores": {
-            "iptm":          scores.get("iptm"),
-            "ptm":           scores.get("ptm"),
-            "confidence":    scores.get("confidence"),
-            "per_chain_ptm": scores.get("per_chain_ptm", {}),
-            "interpretation": _interpret_boltz_scores(scores),
+            "iptm":          iptm_score,
+            "ptm":           ptm_score,
+            "confidence":    confidence,
+            "per_chain_ptm": per_chain_ptm,
+            "interpretation": _interpret_boltz_scores({"confidence": confidence}),
         },
         "runtime_metrics": runtime,
         "visualization": {
@@ -338,9 +414,21 @@ async def predict_structure_boltz2(
         },
     }
 
-    if predict_affinity and affinity:
-        aff_val = affinity.get("affinity_pred")
-        aff_prob = affinity.get("affinity_probability_binary")
+    if affinity:
+        aff_val = None
+        aff_prob = None
+        if isinstance(affinity, dict):
+            aff_val = _first_numeric(affinity.get("affinity_pred"))
+            aff_prob = _first_numeric(affinity.get("affinity_probability_binary"))
+            if aff_val is None or aff_prob is None:
+                for value in affinity.values():
+                    if isinstance(value, dict):
+                        if aff_val is None:
+                            aff_val = _first_numeric(value.get("affinity_pred"))
+                        if aff_prob is None:
+                            aff_prob = _first_numeric(value.get("affinity_probability_binary"))
+                        if aff_val is not None or aff_prob is not None:
+                            break
         result["affinity"] = {
             "affinity_pred_log_uM":          aff_val,
             "affinity_probability_binding":  aff_prob,
@@ -348,9 +436,13 @@ async def predict_structure_boltz2(
                 round(10 ** aff_val, 4) if aff_val is not None else None
             ),
             "interpretation": _interpret_affinity(aff_val, aff_prob),
+            "raw": affinity,
         }
     elif predict_affinity:
         result["affinity"] = {"note": "Affinity data not returned by API for this complex."}
+
+    if request_notes:
+        result["request_notes"] = request_notes
 
     return result
 
@@ -461,13 +553,14 @@ async def generate_dna_evo2(
     headers = _evo2_headers()
 
     payload = {
-        "sequence":                 sequence,
-        "num_tokens":               num_tokens,
-        "temperature":              temperature,
-        "top_k":                    top_k,
-        "top_p":                    top_p,
-        "enable_logits_reporting":  enable_logits,
+        "sequence":    sequence,
+        "num_tokens":  num_tokens,
+        "temperature": temperature,
+        "top_k":       top_k,
+        "top_p":       top_p,
     }
+    if enable_logits:
+        payload["enable_logits"] = True
 
     logger.info(
         f"[Evo2-40B] Generating {num_tokens} DNA tokens "
@@ -483,11 +576,10 @@ async def generate_dna_evo2(
             json=payload,
             timeout=120.0,
         )
-        if resp.status_code == 402:
-            raise PermissionError("NVIDIA NIM quota exceeded.")
-        if resp.status_code == 401:
-            raise PermissionError("Invalid NVIDIA API key.")
-        resp.raise_for_status()
+        _raise_for_nim_error(
+            resp,
+            "Invalid NVIDIA API key. Check NVIDIA_EVO2_API_KEY in your deployment environment.",
+        )
         data    = resp.json()
         elapsed = round(time.monotonic() - t0, 2)
 
@@ -607,28 +699,31 @@ async def score_sequence_evo2(
     headers = _evo2_headers()
 
     # Score both sequences — use logits to get per-token likelihoods
-    async def _score(seq: str) -> float | None:
+    async def _score(seq: str) -> tuple[float | None, str]:
         resp = await client.post(
             _EVO2_URL,
             headers=headers,
             json={
-                "sequence":                seq,
-                "num_tokens":              1,     # Minimal generation
-                "temperature":             1.0,
-                "top_k":                   1,
-                "enable_logits_reporting": True,
+                "sequence":      seq,
+                "num_tokens":    1,
+                "temperature":   1.0,
+                "top_k":         1,
+                "top_p":         1.0,
+                "enable_logits": True,
             },
             timeout=120.0,
         )
-        resp.raise_for_status()
-        data   = resp.json()
-        logits = data.get("logits")
-        if logits and isinstance(logits, list):
-            # Mean log-likelihood across positions
-            return round(sum(logits) / len(logits), 6)
-        return None
+        _raise_for_nim_error(
+            resp,
+            "Invalid NVIDIA API key. Check NVIDIA_EVO2_API_KEY in your deployment environment.",
+        )
+        data = resp.json()
+        return _next_token_proxy_score(data.get("logits")), data.get("sequence", "")
 
-    wt_score, var_score = await asyncio.gather(_score(wt), _score(var))
+    (wt_score, wt_next_token), (var_score, var_next_token) = await asyncio.gather(
+        _score(wt),
+        _score(var),
+    )
 
     delta: float | None = None
     if wt_score is not None and var_score is not None:
@@ -642,11 +737,14 @@ async def score_sequence_evo2(
         "delta_score":        delta,
         "mutation_count":     len(mutations),
         "mutation_positions": mutations[:20],   # cap list
+        "wildtype_next_token": wt_next_token,
+        "variant_next_token":  var_next_token,
+        "scoring_basis":      "Maximum next-token logit returned by Evo2 for each sequence.",
         "interpretation":     _interpret_variant_score(delta),
         "note": (
-            "Negative delta = variant less likely under Evo2 model "
-            "(potentially deleterious). "
-            "Positive delta = variant more likely (potentially neutral/beneficial)."
+            "Negative delta means the variant sequence produced a lower next-token "
+            "confidence proxy than wildtype under Evo2. This is a hosted-endpoint "
+            "proxy, not a full-sequence likelihood."
         ),
     }
 
