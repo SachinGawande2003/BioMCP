@@ -4,15 +4,78 @@ Tests - MCP server public surface.
 
 from __future__ import annotations
 
+import importlib
+import json
+
 import pytest
 
 from biomcp import __version__
 from biomcp.server import (
+    _PUBLIC_TOOL_EXAMPLES,
     TOOLS,
     _build_health_report,
     _build_readiness_report,
     _build_tool_health_report,
+    _dispatch,
+    _list_resource_definitions,
+    _read_resource_contents,
 )
+
+TOOL_IMPLEMENTATIONS = {
+    "search_pubmed": ("biomcp.tools.ncbi", "search_pubmed"),
+    "get_gene_info": ("biomcp.tools.ncbi", "get_gene_info"),
+    "run_blast": ("biomcp.tools.ncbi", "run_blast"),
+    "get_protein_info": ("biomcp.tools.proteins", "get_protein_info"),
+    "find_protein": ("biomcp.tools.strategy_surface", "find_protein"),
+    "get_alphafold_structure": ("biomcp.tools.proteins", "get_alphafold_structure"),
+    "pathway_analysis": ("biomcp.tools.strategy_surface", "pathway_analysis"),
+    "get_drug_targets": ("biomcp.tools.pathways", "get_drug_targets"),
+    "get_gene_disease_associations": ("biomcp.tools.pathways", "get_gene_disease_associations"),
+    "search_clinical_trials": ("biomcp.tools.advanced", "search_clinical_trials"),
+    "multi_omics_gene_report": ("biomcp.tools.advanced", "multi_omics_gene_report"),
+    "predict_structure_boltz2": ("biomcp.tools.strategy_surface", "boltz2_workflow"),
+    "generate_dna_evo2": ("biomcp.tools.strategy_surface", "evo2_workflow"),
+    "crispr_analysis": ("biomcp.tools.strategy_surface", "crispr_analysis"),
+    "drug_safety": ("biomcp.tools.strategy_surface", "drug_safety"),
+    "variant_analysis": ("biomcp.tools.strategy_surface", "variant_analysis"),
+    "find_repurposing_candidates": ("biomcp.tools.intelligence", "find_repurposing_candidates"),
+    "verify_biological_claim": ("biomcp.tools.verify", "verify_biological_claim"),
+    "search_cbio_mutations": ("biomcp.tools.databases", "search_cbio_mutations"),
+    "search_gwas_catalog": ("biomcp.tools.databases", "search_gwas_catalog"),
+    "session": ("biomcp.server", "_session_workflow"),
+    "drug_interaction_checker": ("biomcp.tools.strategy_surface", "drug_interaction_checker"),
+    "protein_binding_pocket": ("biomcp.tools.strategy_surface", "protein_binding_pocket"),
+    "biomarker_panel_design": ("biomcp.tools.strategy_surface", "biomarker_panel_design"),
+    "pharmacogenomics_report": ("biomcp.tools.strategy_surface", "pharmacogenomics_report"),
+    "protein_family_analysis": ("biomcp.tools.strategy_surface", "protein_family_analysis"),
+    "network_enrichment": ("biomcp.tools.strategy_surface", "network_enrichment"),
+    "rnaseq_deconvolution": ("biomcp.tools.strategy_surface", "rnaseq_deconvolution"),
+    "structural_similarity": ("biomcp.tools.strategy_surface", "structural_similarity"),
+    "rare_disease_diagnosis": ("biomcp.tools.strategy_surface", "rare_disease_diagnosis"),
+    "genome_browser_snapshot": ("biomcp.tools.strategy_surface", "genome_browser_snapshot"),
+}
+
+
+def _assert_value_matches_schema(prop_def: dict, value: object) -> None:
+    prop_type = prop_def.get("type")
+    if prop_type == "string":
+        assert isinstance(value, str)
+    elif prop_type == "integer":
+        assert isinstance(value, int) and not isinstance(value, bool)
+    elif prop_type == "number":
+        assert isinstance(value, (int, float)) and not isinstance(value, bool)
+    elif prop_type == "boolean":
+        assert isinstance(value, bool)
+    elif prop_type == "array":
+        assert isinstance(value, list)
+    elif prop_type == "object":
+        assert isinstance(value, dict)
+    else:
+        raise AssertionError(f"Unsupported schema type: {prop_type}")
+
+    enum = prop_def.get("enum")
+    if enum is not None:
+        assert value in enum
 
 
 class TestToolRegistry:
@@ -135,6 +198,79 @@ class TestToolRegistry:
                 assert ptype in valid_types, (
                     f"Tool '{tool.name}', property '{prop_name}' has invalid type '{ptype}'"
                 )
+
+    def test_all_public_tools_have_examples(self):
+        for tool in TOOLS:
+            examples = tool.inputSchema.get("examples")
+            assert examples, f"Tool '{tool.name}' is missing schema examples"
+
+    def test_examples_cover_required_fields_and_match_types(self):
+        tool_names = {tool.name for tool in TOOLS}
+        assert set(_PUBLIC_TOOL_EXAMPLES) == tool_names
+
+        for tool in TOOLS:
+            schema = tool.inputSchema
+            properties = schema.get("properties", {})
+            required = set(schema.get("required", []))
+            examples = schema.get("examples", [])
+
+            for example in examples:
+                assert required.issubset(example), (
+                    f"Example for '{tool.name}' does not cover required fields"
+                )
+                for field_name, value in example.items():
+                    assert field_name in properties, (
+                        f"Example for '{tool.name}' includes unknown field '{field_name}'"
+                    )
+                    _assert_value_matches_schema(properties[field_name], value)
+
+
+class TestMCPResources:
+    def test_resource_catalog_is_exposed(self):
+        resources = _list_resource_definitions()
+        uris = {str(resource.uri) for resource in resources}
+        assert "biomcp://server/capabilities" in uris
+        assert "biomcp://tools/catalog" in uris
+
+    def test_tool_catalog_resource_contains_examples(self):
+        contents = _read_resource_contents("biomcp://tools/catalog")
+        assert len(contents) == 1
+        assert contents[0].mime_type == "application/json"
+
+        payload = json.loads(contents[0].content)
+        assert payload["tool_count"] == len(TOOLS)
+        first_tool = payload["tools"][0]
+        assert "examples" in first_tool
+
+    def test_capabilities_resource_includes_transport_and_health_endpoints(self):
+        contents = _read_resource_contents("biomcp://server/capabilities")
+        payload = json.loads(contents[0].content)
+        assert payload["service"] == "heuris-biomcp"
+        assert payload["transport_modes"] == ["stdio", "http"]
+        assert "/readyz" in payload["health_endpoints"]
+
+
+class TestDispatchSmoke:
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("tool_name", sorted(TOOL_IMPLEMENTATIONS))
+    async def test_public_tools_dispatch_with_example_payloads(
+        self,
+        tool_name: str,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        module_name, attr_name = TOOL_IMPLEMENTATIONS[tool_name]
+        module = importlib.import_module(module_name)
+
+        async def _fake_handler(**kwargs):
+            return {"tool": tool_name, "arguments": kwargs}
+
+        monkeypatch.setattr(module, attr_name, _fake_handler)
+
+        payload = _PUBLIC_TOOL_EXAMPLES[tool_name][0]
+        result = json.loads(await _dispatch(tool_name, payload))
+        assert result["status"] == "success"
+        assert result["tool"] == tool_name
+        assert result["data"]["arguments"] == payload
 
 
 class TestOperationalHealth:

@@ -3,6 +3,7 @@ name: CI
 on:
   push:
     branches: [main, master, develop]
+    tags: ["v*"]
   pull_request:
     branches: [main, master]
 
@@ -57,3 +58,30 @@ jobs:
         run: pytest tests/ -v -m integration --timeout=60
         env:
           NCBI_API_KEY: ${{ secrets.NCBI_API_KEY }}
+
+  publish:
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install build tooling
+        run: pip install build twine
+
+      - name: Build distribution
+        run: python -m build
+
+      - name: Check distribution metadata
+        run: twine check dist/*
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          password: ${{ secrets.PYPI_API_TOKEN }}

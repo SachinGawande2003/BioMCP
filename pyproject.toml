@@ -77,6 +77,7 @@ Documentation = "https://github.com/SachinGawande2003/Heuris-BioMCP#readme"
 Repository    = "https://github.com/SachinGawande2003/Heuris-BioMCP"
 "Bug Tracker" = "https://github.com/SachinGawande2003/Heuris-BioMCP/issues"
 Changelog     = "https://github.com/SachinGawande2003/Heuris-BioMCP/releases"
+Security      = "https://github.com/SachinGawande2003/Heuris-BioMCP/security/policy"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/biomcp"]

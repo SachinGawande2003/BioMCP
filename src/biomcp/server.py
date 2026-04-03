@@ -15,11 +15,13 @@ from typing import Any
 
 from loguru import logger
 from mcp.server import Server
+from mcp.server.lowlevel.helper_types import ReadResourceContents
 from mcp.server.stdio import stdio_server
-from mcp.types import TextContent, Tool
+from mcp.types import Resource, TextContent, Tool
 
 from biomcp import __version__
 from biomcp.utils import close_http_client, format_error, format_success
+
 # FIX #1: Removed duplicate import line that was here
 
 SERVER_NAME = "heuris-biomcp"
@@ -1272,6 +1274,214 @@ TOOLS = [
 # ─────────────────────────────────────────────────────────────────────────────
 
 
+_PUBLIC_TOOL_EXAMPLES: dict[str, list[dict[str, Any]]] = {
+    "search_pubmed": [
+        {"query": "KRAS G12C inhibitor lung cancer", "max_results": 5, "sort": "relevance"}
+    ],
+    "get_gene_info": [{"gene_symbol": "TP53", "organism": "homo sapiens"}],
+    "run_blast": [
+        {
+            "sequence": "MEEPQSDPSVEPPLSQETFSDLWKLLPEN",
+            "program": "blastp",
+            "database": "swissprot",
+            "max_hits": 5,
+        }
+    ],
+    "get_protein_info": [{"accession": "P04637"}],
+    "find_protein": [
+        {
+            "query": "EGFR kinase domain",
+            "source": "both",
+            "organism": "homo sapiens",
+            "reviewed_only": True,
+            "max_results": 5,
+        }
+    ],
+    "get_alphafold_structure": [{"uniprot_accession": "P04637", "model_version": "v4"}],
+    "pathway_analysis": [
+        {
+            "action": "gene_context",
+            "db": "reactome",
+            "gene_symbol": "KRAS",
+            "organism": "hsa",
+        }
+    ],
+    "get_drug_targets": [{"gene_symbol": "EGFR", "max_results": 10}],
+    "get_gene_disease_associations": [{"gene_symbol": "BRCA1", "max_results": 10}],
+    "search_clinical_trials": [
+        {
+            "query": "EGFR non-small cell lung cancer",
+            "status": "RECRUITING",
+            "phase": "PHASE2",
+            "max_results": 5,
+        }
+    ],
+    "multi_omics_gene_report": [{"gene_symbol": "MYC"}],
+    "predict_structure_boltz2": [
+        {
+            "mode": "structure",
+            "protein_sequences": ["MKTAYIAKQRQISFVKSHFSRQ"],
+            "diffusion_samples": 1,
+        }
+    ],
+    "generate_dna_evo2": [
+        {
+            "mode": "generate",
+            "sequence": "ATGCGTATGCGT",
+            "num_tokens": 80,
+            "temperature": 0.8,
+            "top_k": 4,
+            "top_p": 0.95,
+            "num_generations": 1,
+        }
+    ],
+    "crispr_analysis": [
+        {
+            "action": "design",
+            "gene_symbol": "PCSK9",
+            "cas_variant": "SpCas9",
+            "n_guides": 4,
+            "genome": "hg38",
+        }
+    ],
+    "drug_safety": [
+        {
+            "action": "events",
+            "drug_name": "warfarin",
+            "event_type": "cardiac",
+            "serious_only": True,
+            "max_results": 5,
+        }
+    ],
+    "variant_analysis": [
+        {
+            "action": "full_report",
+            "gene_symbol": "BRCA1",
+            "variant": "c.68_69delAG",
+            "inheritance": "AD",
+        }
+    ],
+    "find_repurposing_candidates": [
+        {"disease": "idiopathic pulmonary fibrosis", "max_candidates": 10}
+    ],
+    "verify_biological_claim": [
+        {
+            "claim": "KRAS G12C inhibitors improve progression-free survival in NSCLC",
+            "context_gene": "KRAS",
+        }
+    ],
+    "search_cbio_mutations": [
+        {"gene_symbol": "TP53", "cancer_type": "breast cancer", "max_studies": 5}
+    ],
+    "search_gwas_catalog": [{"gene_symbol": "APOE", "max_results": 10}],
+    "session": [{"action": "resolve_entity", "query": "EGFR", "hint_type": "gene"}],
+    "drug_interaction_checker": [
+        {"drug_name": "warfarin", "co_medications": ["amiodarone", "fluconazole"]}
+    ],
+    "protein_binding_pocket": [{"accession": "P00533", "max_sites": 5}],
+    "biomarker_panel_design": [
+        {
+            "disease": "triple negative breast cancer",
+            "panel_size": 8,
+            "context": "tissue biopsy",
+        }
+    ],
+    "pharmacogenomics_report": [
+        {"drug_name": "clopidogrel", "gene_symbol": "CYP2C19", "max_annotations": 8}
+    ],
+    "protein_family_analysis": [{"query": "EGFR family kinases"}],
+    "network_enrichment": [
+        {"gene_list": ["TP53", "MDM2", "ATM"], "min_string_score": 700, "max_results": 10}
+    ],
+    "rnaseq_deconvolution": [
+        {"ranked_genes": ["EPCAM", "KRT18", "COL1A1", "PTPRC"], "max_cell_types": 5}
+    ],
+    "structural_similarity": [{"query": "EGFR inhibitors", "threshold": 85, "max_results": 8}],
+    "rare_disease_diagnosis": [
+        {"phenotype_terms": ["developmental delay", "ataxia", "seizures"], "max_results": 5}
+    ],
+    "genome_browser_snapshot": [{"gene_symbol": "BRCA1", "assembly": "GRCh38", "flank_bp": 25000}],
+}
+
+_RESOURCE_CAPABILITIES_URI = "biomcp://server/capabilities"
+_RESOURCE_TOOL_CATALOG_URI = "biomcp://tools/catalog"
+_RESOURCE_METADATA: dict[str, dict[str, str]] = {
+    _RESOURCE_CAPABILITIES_URI: {
+        "name": "server-capabilities",
+        "title": "BioMCP Server Capabilities",
+        "description": "Transport, health, capability, and deployment-facing metadata.",
+    },
+    _RESOURCE_TOOL_CATALOG_URI: {
+        "name": "tool-catalog",
+        "title": "BioMCP Tool Catalog",
+        "description": "Public tool inventory with required arguments and example payloads.",
+    },
+}
+
+
+def _apply_public_tool_examples() -> None:
+    for tool in TOOLS:
+        examples = _PUBLIC_TOOL_EXAMPLES.get(tool.name)
+        if examples:
+            tool.inputSchema["examples"] = examples
+
+
+def _tool_catalog_entries() -> list[dict[str, Any]]:
+    return [
+        {
+            "name": tool.name,
+            "description": tool.description,
+            "required": tool.inputSchema.get("required", []),
+            "properties": list(tool.inputSchema.get("properties", {}).keys()),
+            "examples": tool.inputSchema.get("examples", []),
+        }
+        for tool in TOOLS
+    ]
+
+
+def _resource_payload(uri: str) -> dict[str, Any]:
+    if uri == _RESOURCE_CAPABILITIES_URI:
+        return {
+            "service": SERVER_NAME,
+            "display_name": SERVER_DISPLAY_NAME,
+            "version": __version__,
+            "transport_modes": ["stdio", "http"],
+            "health_endpoints": ["/health", "/healthz", "/readyz", "/tool-health"],
+            "public_tool_count": len(TOOLS),
+            "resource_uris": sorted(_RESOURCE_METADATA),
+            "capabilities": _build_capability_status(),
+        }
+    if uri == _RESOURCE_TOOL_CATALOG_URI:
+        return {
+            "service": SERVER_NAME,
+            "version": __version__,
+            "tool_count": len(TOOLS),
+            "tools": _tool_catalog_entries(),
+        }
+    raise ValueError(f"Unknown resource '{uri}'")
+
+
+def _list_resource_definitions() -> list[Resource]:
+    return [
+        Resource(
+            name=meta["name"],
+            title=meta["title"],
+            uri=uri,
+            description=meta["description"],
+            mimeType="application/json",
+        )
+        for uri, meta in _RESOURCE_METADATA.items()
+    ]
+
+
+def _read_resource_contents(uri: Any) -> list[ReadResourceContents]:
+    payload = json.dumps(_resource_payload(str(uri)), indent=2, sort_keys=True)
+    return [ReadResourceContents(content=payload, mime_type="application/json")]
+
+
+_apply_public_tool_examples()
+
+
 async def _generate_research_hypothesis(
     topic: str,
     context_genes: list[str] | None = None,
@@ -1422,72 +1632,96 @@ async def _session_workflow(
 async def _raw_dispatch(name: str, args: dict[str, Any]) -> Any:
     """Raw dispatcher returning Python objects. Used by the query planner."""
     # ── Core tool imports ──────────────────────────────────────────────────────
-    from biomcp.tools.ncbi import get_gene_info, run_blast, search_pubmed
-    from biomcp.tools.proteins import (
-        get_alphafold_structure, get_protein_info,
-        search_pdb_structures, search_proteins,
-    )
-    from biomcp.tools.pathways import (
-        get_compound_info, get_drug_targets, get_gene_disease_associations,
-        get_pathway_genes, get_reactome_pathways, search_pathways,
-    )
     from biomcp.tools.advanced import (
-        get_gene_variants, get_trial_details, multi_omics_gene_report,
-        query_neuroimaging_datasets, search_clinical_trials,
-        search_gene_expression, search_scrna_datasets,
-    )
-    from biomcp.tools.nvidia_nim import (
-        design_protein_ligand, generate_dna_evo2,
-        predict_structure_boltz2, score_sequence_evo2,
-    )
-    from biomcp.tools.databases import (
-        get_disgenet_associations, get_gtex_expression, get_omim_gene_diseases,
-        get_pharmgkb_variants, get_string_interactions,
-        search_cbio_mutations, search_gwas_catalog,
-    )
-    # FIX #2: Single import of verify and protocol tools (removed duplicates)
-    from biomcp.tools.verify import detect_database_conflicts, verify_biological_claim
-    from biomcp.tools.protocol_generator import (
-        estimate_statistical_power, generate_experimental_protocol, suggest_cell_lines,
-    )
-    from biomcp.tools.intelligence import (
-        find_repurposing_candidates, find_research_gaps, validate_reasoning_chain,
-    )
-    # FIX #2: Single import of extended_databases (removed duplicate)
-    from biomcp.tools.extended_databases import (
-        get_biogrid_interactions, get_encode_regulatory, get_tcga_expression,
-        get_ucsc_splice_variants, search_cellmarker,
-        search_metabolomics, search_orphan_diseases,
+        get_gene_variants,
+        get_trial_details,
+        multi_omics_gene_report,
+        query_neuroimaging_datasets,
+        search_clinical_trials,
+        search_gene_expression,
+        search_scrna_datasets,
     )
     from biomcp.tools.crispr_tools import (
-        design_base_editor_guides, design_crispr_guides, get_crispr_repair_outcomes,
-        predict_off_target_sites, score_guide_efficiency,
+        design_base_editor_guides,
+        design_crispr_guides,
+        get_crispr_repair_outcomes,
+        predict_off_target_sites,
+        score_guide_efficiency,
+    )
+    from biomcp.tools.databases import (
+        get_disgenet_associations,
+        get_gtex_expression,
+        get_omim_gene_diseases,
+        get_pharmgkb_variants,
+        get_string_interactions,
+        search_cbio_mutations,
+        search_gwas_catalog,
     )
     from biomcp.tools.drug_safety import (
-        analyze_safety_signals, compare_drug_safety,
-        get_drug_label_warnings, query_adverse_events,
+        analyze_safety_signals,
+        compare_drug_safety,
+        get_drug_label_warnings,
+        query_adverse_events,
     )
-    from biomcp.tools.variant_interpreter import (
-        classify_variant, get_population_frequency, lookup_clinvar_variant,
+
+    # FIX #2: Single import of extended_databases (removed duplicate)
+    from biomcp.tools.extended_databases import (
+        get_biogrid_interactions,
+        get_encode_regulatory,
+        get_tcga_expression,
+        get_ucsc_splice_variants,
+        search_cellmarker,
+        search_metabolomics,
+        search_orphan_diseases,
     )
+
     # New innovation tools
     from biomcp.tools.innovations import (
-        bulk_gene_analysis, compute_pathway_enrichment, search_biorxiv,
-        get_protein_domain_structure, analyze_coexpression,
-        get_cancer_hotspots, predict_splice_impact,
+        analyze_coexpression,
+        bulk_gene_analysis,
+        compute_pathway_enrichment,
+        get_cancer_hotspots,
+        get_protein_domain_structure,
+        predict_splice_impact,
+        search_biorxiv,
+    )
+    from biomcp.tools.intelligence import (
+        find_repurposing_candidates,
+        find_research_gaps,
+        validate_reasoning_chain,
+    )
+    from biomcp.tools.ncbi import get_gene_info, run_blast, search_pubmed
+    from biomcp.tools.nvidia_nim import design_protein_ligand, score_sequence_evo2
+    from biomcp.tools.pathways import (
+        get_compound_info,
+        get_drug_targets,
+        get_gene_disease_associations,
+        get_pathway_genes,
+        get_reactome_pathways,
+        search_pathways,
+    )
+    from biomcp.tools.proteins import (
+        get_alphafold_structure,
+        get_protein_info,
+        search_pdb_structures,
+        search_proteins,
+    )
+    from biomcp.tools.protocol_generator import (
+        estimate_statistical_power,
+        generate_experimental_protocol,
+        suggest_cell_lines,
     )
     from biomcp.tools.strategy_surface import (
         biomarker_panel_design,
         boltz2_workflow,
         crispr_analysis,
         drug_interaction_checker,
-        drug_safety as drug_safety_workflow,
         evo2_workflow,
         find_protein,
         genome_browser_snapshot,
         network_enrichment,
-        pharmacogenomics_report,
         pathway_analysis,
+        pharmacogenomics_report,
         protein_binding_pocket,
         protein_family_analysis,
         rare_disease_diagnosis,
@@ -1495,6 +1729,17 @@ async def _raw_dispatch(name: str, args: dict[str, Any]) -> Any:
         structural_similarity,
         variant_analysis,
     )
+    from biomcp.tools.strategy_surface import (
+        drug_safety as drug_safety_workflow,
+    )
+    from biomcp.tools.variant_interpreter import (
+        classify_variant,
+        get_population_frequency,
+        lookup_clinvar_variant,
+    )
+
+    # FIX #2: Single import of verify and protocol tools (removed duplicates)
+    from biomcp.tools.verify import detect_database_conflicts, verify_biological_claim
 
     DISPATCH: dict[str, Any] = {
         # Literature
@@ -1628,13 +1873,6 @@ async def _dispatch(name: str, args: dict[str, Any]) -> str:
 
 
 def create_server() -> Server:
-    # FIX #10: Guard against mcp SDK < 1.3.0 which lacks Icon / icons kwarg
-    try:
-        from mcp.types import Icon as _Icon
-        _has_icon = True
-    except ImportError:
-        _has_icon = False
-
     server_kwargs: dict[str, Any] = {
         "instructions": (
             "Heuris-BioMCP — Connect ChatGPT, Claude, and other MCP clients "
@@ -1650,26 +1888,18 @@ def create_server() -> Server:
     except TypeError:
         server = Server(SERVER_NAME)
 
-    if _has_icon:
-        import base64, os
-        logo_candidates = [
-            os.path.join(os.path.dirname(__file__), "..", "..", "LOGO.jpeg"),
-            os.path.join(os.path.dirname(__file__), "LOGO.jpeg"),
-            "LOGO.jpeg",
-        ]
-        for logo_path in logo_candidates:
-            if os.path.exists(logo_path):
-                try:
-                    with open(logo_path, "rb") as f:
-                        b64 = base64.b64encode(f.read()).decode()
-                    # Apply icon via server metadata if supported
-                    break
-                except Exception:
-                    pass
-
     @server.list_tools()
     async def list_tools() -> list[Tool]:
         return TOOLS
+
+    if hasattr(server, "list_resources") and hasattr(server, "read_resource"):
+        @server.list_resources()
+        async def list_resources() -> list[Resource]:
+            return _list_resource_definitions()
+
+        @server.read_resource()
+        async def read_resource(uri: Any) -> list[ReadResourceContents]:
+            return _read_resource_contents(uri)
 
     @server.call_tool()
     async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
@@ -1703,9 +1933,9 @@ async def _run() -> None:
         logger.info(f"   🌐 HTTP mode — port {http_port}")
         from mcp.server.sse import SseServerTransport
         from starlette.applications import Starlette
-        from starlette.routing import Mount, Route
-        from starlette.responses import JSONResponse, Response
         from starlette.middleware.cors import CORSMiddleware
+        from starlette.responses import JSONResponse, Response
+        from starlette.routing import Mount, Route
 
         sse_transport = SseServerTransport(MESSAGE_PATH)
 
