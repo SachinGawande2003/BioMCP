@@ -59,7 +59,7 @@ async def test_get_protein_info_parses_uniprot(mock_http_client, mock_http_respo
     with patch("biomcp.tools.proteins.get_http_client", return_value=mock_http_client):
         from biomcp.tools.proteins import get_protein_info
 
-        result = await get_protein_info("P04637")
+        result = await get_protein_info.__wrapped__.__wrapped__.__wrapped__("P04637")
 
     assert result["accession"] == "P04637"
     assert result["full_name"] == "Cellular tumor antigen p53"
@@ -67,6 +67,57 @@ async def test_get_protein_info_parses_uniprot(mock_http_client, mock_http_respo
     assert result["sequence_length"] == 393
     assert result["reviewed"] is True
     assert len(result["go_terms"]) >= 1
+
+
+@pytest.mark.asyncio
+async def test_get_protein_info_uses_uniprot_disease_fallbacks(mock_http_client, mock_http_response):
+    """Disease parsing should fall back to diseaseId, disease.description, and note/text payloads."""
+    uniprot_resp = mock_http_response(
+        json_data={
+            "primaryAccession": "P04637",
+            "entryType": "UniProtKB reviewed (Swiss-Prot)",
+            "proteinDescription": {"recommendedName": {"fullName": {"value": "Cellular tumor antigen p53"}}},
+            "genes": [{"geneName": {"value": "TP53"}}],
+            "organism": {"scientificName": "Homo sapiens"},
+            "sequence": {"length": 393, "molWeight": 43653, "value": "MEEPQ..."},
+            "comments": [
+                {
+                    "commentType": "DISEASE",
+                    "disease": {
+                        "diseaseId": "Li-Fraumeni syndrome",
+                        "description": "Autosomal dominant familial cancer syndrome.",
+                    },
+                    "note": {
+                        "texts": [
+                            {"value": "The disease is caused by variants affecting the gene represented in this entry."}
+                        ]
+                    },
+                },
+                {
+                    "commentType": "DISEASE",
+                    "note": {
+                        "texts": [
+                            {"value": "TP53 is frequently mutated in multiple cancers."}
+                        ]
+                    },
+                },
+            ],
+        }
+    )
+
+    mock_http_client.get = AsyncMock(return_value=uniprot_resp)
+
+    with patch("biomcp.tools.proteins.get_http_client", return_value=mock_http_client):
+        from biomcp.tools.proteins import get_protein_info
+
+        result = await get_protein_info.__wrapped__.__wrapped__.__wrapped__("P04637")
+
+    assert result["diseases"][0]["name"] == "Li-Fraumeni syndrome"
+    assert "Autosomal dominant familial cancer syndrome." in result["diseases"][0]["description"]
+    assert "variants affecting the gene" in result["diseases"][0]["description"]
+    assert result["diseases"][0]["disease_id"] == "Li-Fraumeni syndrome"
+    assert result["diseases"][1]["name"] == ""
+    assert "frequently mutated in multiple cancers" in result["diseases"][1]["description"]
 
 
 @pytest.mark.asyncio
@@ -136,6 +187,7 @@ async def test_protein_info_live():
     result = await get_protein_info("P04637")
     assert result["accession"] == "P04637"
     assert result["sequence_length"] > 0
+    assert any(d.get("name") or d.get("description") for d in result.get("diseases", []))
 
 
 @pytest.mark.integration

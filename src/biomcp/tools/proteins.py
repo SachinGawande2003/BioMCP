@@ -61,8 +61,13 @@ async def get_protein_info(accession: str) -> dict[str, Any]:
 
     comments = d.get("comments", [])
 
+    def _text_values(items: list[dict[str, Any]]) -> list[str]:
+        return [item.get("value", "").strip() for item in items if item.get("value", "").strip()]
+
     def _txt(comment: dict[str, Any]) -> str:
-        return (comment.get("texts") or [{}])[0].get("value", "")
+        values = _text_values(comment.get("texts") or [])
+        values.extend(_text_values((comment.get("note") or {}).get("texts") or []))
+        return " ".join(dict.fromkeys(values))
 
     functions = [_txt(c) for c in comments if c.get("commentType") == "FUNCTION"]
     ptms      = [_txt(c) for c in comments if c.get("commentType") == "PTM"]
@@ -71,11 +76,26 @@ async def get_protein_info(accession: str) -> dict[str, Any]:
         for c in comments if c.get("commentType") == "SUBCELLULAR LOCATION"
         for loc in c.get("subcellularLocations", [])
     ]
-    diseases = [
-        {"name": c.get("disease", {}).get("diseaseName", {}).get("value", ""),
-         "description": _txt(c)}
-        for c in comments if c.get("commentType") == "DISEASE"
-    ]
+    diseases: list[dict[str, str]] = []
+    for c in comments:
+        if c.get("commentType") != "DISEASE":
+            continue
+        disease = c.get("disease") or {}
+        name = (
+            (disease.get("diseaseName") or {}).get("value", "").strip()
+            or disease.get("diseaseId", "").strip()
+        )
+        description_parts = []
+        if disease.get("description", "").strip():
+            description_parts.append(disease["description"].strip())
+        note_text = _txt(c)
+        if note_text:
+            description_parts.append(note_text)
+        diseases.append({
+            "name": name,
+            "description": " ".join(dict.fromkeys(description_parts)),
+            "disease_id": disease.get("diseaseId", "").strip(),
+        })
 
     go_terms: list[dict[str, str]] = []
     for xref in d.get("uniProtKBCrossReferences", []):
