@@ -8,9 +8,7 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, patch
 
-import httpx
 import pytest
-from tenacity import wait_none
 
 
 @pytest.mark.asyncio
@@ -108,10 +106,12 @@ async def test_get_gene_variants_handles_ensembl_overlap_error(mock_http_client,
     with patch("biomcp.tools.advanced.get_http_client", return_value=mock_http_client):
         from biomcp.tools.advanced import get_gene_variants
 
-        retrying_call = get_gene_variants.__wrapped__.__wrapped__.retry_with(wait=wait_none())
-        with pytest.raises(httpx.HTTPStatusError):
-            await retrying_call("TP53")
+        result = await get_gene_variants.__wrapped__.__wrapped__("TP53")
 
+    assert result["gene"] == "TP53"
+    assert result["variants"] == []
+    assert result["returned"] == 0
+    assert "note" in result
     assert mock_http_client.get.await_count == 3
 
 

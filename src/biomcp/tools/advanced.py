@@ -228,6 +228,16 @@ async def get_gene_variants(
         headers={"Accept": "application/json"},
         params={"feature": "variation"},
     )
+    if var_resp.status_code == 404:
+        return {
+            "gene": gene_symbol,
+            "ensembl_gene_id": gene_id,
+            "chromosome": chrom,
+            "total_variants": 0,
+            "returned": 0,
+            "variants": [],
+            "note": f"No Ensembl overlap variants found for '{gene_symbol}'.",
+        }
     var_resp.raise_for_status()
     all_vars = var_resp.json()
 
