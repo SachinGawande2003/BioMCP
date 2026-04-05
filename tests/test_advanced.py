@@ -54,6 +54,28 @@ async def test_search_clinical_trials_parses_response(mock_http_client, mock_htt
 
 
 @pytest.mark.asyncio
+async def test_search_clinical_trials_retries_after_403(mock_http_client, mock_http_response):
+    rate_limited = mock_http_response(status_code=403)
+    success = mock_http_response(json_data={"totalCount": 0, "studies": []})
+    mock_http_client.get = AsyncMock(side_effect=[rate_limited, success])
+
+    with (
+        patch("biomcp.tools.advanced.get_http_client", return_value=mock_http_client),
+        patch("biomcp.tools.advanced.asyncio.sleep", new=AsyncMock()) as sleep_mock,
+    ):
+        from biomcp.tools.advanced import search_clinical_trials
+
+        result = await search_clinical_trials.__wrapped__.__wrapped__.__wrapped__(
+            "EGFR lung cancer", max_results=5
+        )
+
+    assert result["total_found"] == 0
+    assert result["studies"] == []
+    assert mock_http_client.get.await_count == 2
+    sleep_mock.assert_awaited_once_with(60)
+
+
+@pytest.mark.asyncio
 async def test_get_trial_details_not_found(mock_http_client, mock_http_response):
     not_found = mock_http_response(status_code=404)
     not_found.raise_for_status = lambda: None
@@ -64,6 +86,34 @@ async def test_get_trial_details_not_found(mock_http_client, mock_http_response)
         result = await get_trial_details.__wrapped__.__wrapped__.__wrapped__("NCT00000000")
 
     assert "error" in result
+
+
+@pytest.mark.asyncio
+async def test_get_trial_details_retries_after_403(mock_http_client, mock_http_response):
+    rate_limited = mock_http_response(status_code=403)
+    success = mock_http_response(
+        json_data={
+            "protocolSection": {
+                "outcomesModule": {"primaryOutcomes": [{"measure": "ORR", "timeFrame": "12 months"}]},
+                "armsInterventionsModule": {"armGroups": [{"armGroupLabel": "Arm A", "armGroupType": "EXPERIMENTAL"}]},
+                "eligibilityModule": {"eligibilityCriteria": "Adults only"},
+            }
+        }
+    )
+    mock_http_client.get = AsyncMock(side_effect=[rate_limited, success])
+
+    with (
+        patch("biomcp.tools.advanced.get_http_client", return_value=mock_http_client),
+        patch("biomcp.tools.advanced.asyncio.sleep", new=AsyncMock()) as sleep_mock,
+    ):
+        from biomcp.tools.advanced import get_trial_details
+
+        result = await get_trial_details.__wrapped__.__wrapped__.__wrapped__("NCT04280705")
+
+    assert result["nct_id"] == "NCT04280705"
+    assert result["primary_outcomes"][0]["measure"] == "ORR"
+    assert mock_http_client.get.await_count == 2
+    sleep_mock.assert_awaited_once_with(60)
 
 
 @pytest.mark.asyncio

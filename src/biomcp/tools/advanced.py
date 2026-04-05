@@ -44,6 +44,21 @@ _VALID_STATUSES = frozenset({
     "ACTIVE_NOT_RECRUITING", "TERMINATED", "ALL",
 })
 _VALID_PHASES = frozenset({"PHASE1", "PHASE2", "PHASE3", "PHASE4"})
+_CT_403_RETRY_DELAY_SECONDS = 60
+
+
+async def _clinical_trials_get_with_403_retry(
+    client: Any,
+    path: str,
+    *,
+    params: dict[str, Any],
+) -> Any:
+    for attempt in range(2):
+        resp = await client.get(f"{CLINTRIALS_BASE}{path}", params=params, headers=_CT_HEADERS)
+        if resp.status_code != 403 or attempt == 1:
+            return resp
+        await asyncio.sleep(_CT_403_RETRY_DELAY_SECONDS)
+    return resp
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -83,7 +98,7 @@ async def search_clinical_trials(
     if phase:
         params["filter.phase"] = phase
 
-    resp = await client.get(f"{CLINTRIALS_BASE}/studies", params=params, headers=_CT_HEADERS)
+    resp = await _clinical_trials_get_with_403_retry(client, "/studies", params=params)
     if resp.status_code == 403:
         return {
             "error": "ClinicalTrials.gov returned 403 — temporary rate limiting. Retry in 60s.",
@@ -147,8 +162,11 @@ async def get_trial_details(nct_id: str) -> dict[str, Any]:
     nct_id = BioValidator.validate_nct_id(nct_id)
     client = await get_http_client()
 
-    resp = await client.get(f"{CLINTRIALS_BASE}/studies/{nct_id}",
-                             params={"format": "json"}, headers=_CT_HEADERS)
+    resp = await _clinical_trials_get_with_403_retry(
+        client,
+        f"/studies/{nct_id}",
+        params={"format": "json"},
+    )
     if resp.status_code == 403:
         return {"error": "ClinicalTrials.gov returned 403 — retry in 60 seconds."}
     if resp.status_code == 404:
