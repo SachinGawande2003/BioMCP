@@ -57,6 +57,7 @@ jobs:
       - name: Run integration tests (live APIs)
         run: pytest tests/ -v -m integration --timeout=60
         env:
+          BIOMCP_CT_403_RETRY_DELAY: "1"
           NCBI_API_KEY: ${{ secrets.NCBI_API_KEY }}
 
   publish:

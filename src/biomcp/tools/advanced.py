@@ -11,6 +11,7 @@ Fixes applied:
 from __future__ import annotations
 
 import asyncio
+import os
 from typing import Any
 
 from loguru import logger
@@ -44,7 +45,7 @@ _VALID_STATUSES = frozenset({
     "ACTIVE_NOT_RECRUITING", "TERMINATED", "ALL",
 })
 _VALID_PHASES = frozenset({"PHASE1", "PHASE2", "PHASE3", "PHASE4"})
-_CT_403_RETRY_DELAY_SECONDS = 60
+_CT_403_RETRY_DELAY_SECONDS = int(os.getenv("BIOMCP_CT_403_RETRY_DELAY", "60"))
 
 
 async def _clinical_trials_get_with_403_retry(
