@@ -24,7 +24,7 @@ keywords = [
     "model-context-protocol", "boltz2", "evo2", "nvidia-nim"
 ]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Science/Research",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
@@ -83,6 +83,9 @@ Repository    = "https://github.com/SachinGawande2003/Heuris-BioMCP"
 "Bug Tracker" = "https://github.com/SachinGawande2003/Heuris-BioMCP/issues"
 Changelog     = "https://github.com/SachinGawande2003/Heuris-BioMCP/releases"
 Security      = "https://github.com/SachinGawande2003/Heuris-BioMCP/security/policy"
+Support       = "https://github.com/SachinGawande2003/Heuris-BioMCP/blob/master/SUPPORT.md"
+"Privacy Policy" = "https://github.com/SachinGawande2003/Heuris-BioMCP/blob/master/PRIVACY.md"
+"Data Processing" = "https://github.com/SachinGawande2003/Heuris-BioMCP/blob/master/DATA_PROCESSING.md"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/biomcp"]

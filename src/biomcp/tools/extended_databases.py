@@ -84,7 +84,11 @@ async def get_biogrid_interactions(
         gene_b = record.get("OFFICIAL_SYMBOL_B", "")
         partner = gene_b if gene_a.upper() == gene_symbol else gene_a
         exp_type = record.get("EXPERIMENTAL_SYSTEM_TYPE", "physical")
-        pubmed_ids = [str(p) for p in (record.get("PUBMED_ID", "") or "").split("|") if p]
+        raw_pubmed_ids = record.get("PUBMED_ID", "")
+        if isinstance(raw_pubmed_ids, list):
+            pubmed_ids = [str(p) for p in raw_pubmed_ids if p]
+        else:
+            pubmed_ids = [token for token in str(raw_pubmed_ids or "").split("|") if token]
         if exp_type == "physical":
             physical_count += 1
         else:
@@ -451,7 +455,7 @@ async def search_metabolomics(
         for item in raw_titles:
             if len(studies) >= max_results:
                 break
-            if not item or isinstance(item, Exception):
+            if not item or isinstance(item, BaseException):
                 continue
             study_id, title = item
             if query and not any(

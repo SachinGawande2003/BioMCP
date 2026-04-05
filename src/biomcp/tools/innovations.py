@@ -26,7 +26,7 @@ import asyncio
 import math
 import re
 from collections import defaultdict
-from typing import Any
+from typing import Any, cast
 
 from loguru import logger
 
@@ -461,10 +461,10 @@ async def compute_pathway_enrichment(
     # ── Benjamini-Hochberg FDR correction ────────────────────────────────────
     enrichment_results.sort(key=lambda x: x["p_value"])
     n_tests = len(enrichment_results)
-    for rank, result in enumerate(enrichment_results, 1):
-        fdr = min(1.0, result["p_value"] * n_tests / rank)
-        result["fdr"] = round(fdr, 6)
-        result["significant"] = fdr <= fdr_threshold
+    for rank, enrichment_result in enumerate(enrichment_results, 1):
+        fdr = min(1.0, enrichment_result["p_value"] * n_tests / rank)
+        enrichment_result["fdr"] = round(fdr, 6)
+        enrichment_result["significant"] = fdr <= fdr_threshold
 
     significant = [r for r in enrichment_results if r["significant"]]
 
@@ -638,7 +638,7 @@ async def get_protein_domain_structure(
     entries_data = entries_resp.json()
 
     domains: list[dict[str, Any]] = []
-    total_covered = 0
+    covered_fragments: list[tuple[int, int]] = []
 
     for entry in entries_data.get("results", []):
         em = entry.get("metadata", {})
@@ -658,7 +658,7 @@ async def get_protein_domain_structure(
                     start = frag.get("start", 0)
                     end   = frag.get("end", 0)
                     length = end - start + 1
-                    total_covered += length
+                    covered_fragments.append((start, end))
 
                     domains.append({
                         "name":          name,
@@ -671,7 +671,7 @@ async def get_protein_domain_structure(
                         "description":   em.get("description", ""),
                         "go_terms": [
                             {"id": go.get("identifier", ""), "name": go.get("name", "")}
-                            for go in em.get("go_terms", [])[:3]
+                            for go in (em.get("go_terms") or [])[:3]
                         ],
                         "interpro_url":  f"https://www.ebi.ac.uk/interpro/entry/interpro/{em.get('accession', '')}",
                     })
@@ -688,6 +688,16 @@ async def get_protein_domain_structure(
     # Sort domains by start position
     domains.sort(key=lambda x: x["start"])
 
+    merged_fragments: list[tuple[int, int]] = []
+    for start, end in sorted(covered_fragments):
+        if not merged_fragments or start > merged_fragments[-1][1] + 1:
+            merged_fragments.append((start, end))
+        else:
+            merged_fragments[-1] = (
+                merged_fragments[-1][0],
+                max(merged_fragments[-1][1], end),
+            )
+    total_covered = sum(end - start + 1 for start, end in merged_fragments)
     coverage_pct = round(total_covered / max(seq_len, 1) * 100, 1)
 
     # Generate simple ASCII domain diagram
@@ -760,37 +770,45 @@ async def analyze_coexpression(
     pathway_b_task = asyncio.create_task(get_reactome_pathways(gene_b))
     pubmed_task    = asyncio.create_task(search_pubmed(pubmed_q, max_results=5))
 
-    pathway_a, pathway_b, pubmed_result = await asyncio.gather(
-        pathway_a_task, pathway_b_task, pubmed_task,
-        return_exceptions=True,
+    gathered_results = cast(
+        tuple[Any | BaseException, Any | BaseException, Any | BaseException],
+        tuple(
+            await asyncio.gather(
+                pathway_a_task,
+                pathway_b_task,
+                pubmed_task,
+                return_exceptions=True,
+            )
+        ),
     )
+    pathway_a_raw, pathway_b_raw, pubmed_result_raw = gathered_results
+    pathway_a: dict[str, Any] = pathway_a_raw if isinstance(pathway_a_raw, dict) else {}
+    pathway_b: dict[str, Any] = pathway_b_raw if isinstance(pathway_b_raw, dict) else {}
+    pubmed_result: dict[str, Any] = pubmed_result_raw if isinstance(pubmed_result_raw, dict) else {}
 
     # Find shared pathways as proxy for co-expression context
     pathways_a = set(p.get("reactome_id", "") for p in
-                     (pathway_a.get("pathways", []) if isinstance(pathway_a, dict) else []))
+                     pathway_a.get("pathways", []))
     pathways_b = set(p.get("reactome_id", "") for p in
-                     (pathway_b.get("pathways", []) if isinstance(pathway_b, dict) else []))
+                     pathway_b.get("pathways", []))
     shared_pathway_ids = pathways_a & pathways_b
 
-    shared_pathway_names: list[str] = []
-    if isinstance(pathway_a, dict):
-        shared_pathway_names = [
-            p["name"] for p in pathway_a.get("pathways", [])
-            if p.get("reactome_id") in shared_pathway_ids
-        ][:5]
+    shared_pathway_names: list[str] = [
+        p["name"] for p in pathway_a.get("pathways", [])
+        if p.get("reactome_id") in shared_pathway_ids
+    ][:5]
 
     # Literature support
     lit_support: list[dict] = []
-    if isinstance(pubmed_result, dict):
-        for art in pubmed_result.get("articles", []):
-            title = art.get("title", "").lower()
-            if gene_a.lower() in title and gene_b.lower() in title:
-                lit_support.append({
-                    "pmid":  art.get("pmid", ""),
-                    "title": art.get("title", "")[:100],
-                    "year":  art.get("year", ""),
-                    "url":   art.get("url", ""),
-                })
+    for art in pubmed_result.get("articles", []):
+        title = art.get("title", "").lower()
+        if gene_a.lower() in title and gene_b.lower() in title:
+            lit_support.append({
+                "pmid":  art.get("pmid", ""),
+                "title": art.get("title", "")[:100],
+                "year":  art.get("year", ""),
+                "url":   art.get("url", ""),
+            })
 
     # Coexpression hypothesis based on shared pathway evidence
     n_shared = len(shared_pathway_ids)

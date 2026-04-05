@@ -14,6 +14,7 @@ import importlib
 import json
 import os
 import sys
+import time
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -22,7 +23,13 @@ from loguru import logger
 from mcp.server import Server
 from mcp.server.lowlevel.helper_types import ReadResourceContents
 from mcp.server.stdio import stdio_server
-from mcp.types import Resource, TextContent, Tool
+
+try:
+    from mcp.types import Resource, TextContent, Tool, ToolAnnotations
+except ImportError:  # pragma: no cover - compatibility fallback for older mcp SDKs
+    from mcp.types import Resource, TextContent, Tool
+
+    ToolAnnotations = None  # type: ignore[assignment,misc]
 
 from biomcp import __version__
 from biomcp.utils import (
@@ -74,6 +81,69 @@ _ACTIVE_PROGRESS_OWNER: contextvars.ContextVar[str | None] = contextvars.Context
     "biomcp_progress_owner",
     default=None,
 )
+_HTTP_RATE_LIMIT_STATE: dict[str, tuple[float, int]] = {}
+_HTTP_RATE_LIMIT_LOCK: asyncio.Lock | None = None
+_RATE_LIMIT_EXEMPT_PATHS = {
+    "/",
+    "/health",
+    "/healthz",
+    "/readyz",
+    "/tool-health",
+    "/status",
+    LOGO_ROUTE_PATH,
+    "/logo.jpeg",
+}
+
+_TITLE_TOKEN_OVERRIDES = {
+    "alphafold": "AlphaFold",
+    "biomcp": "BioMCP",
+    "cbio": "cBio",
+    "crispr": "CRISPR",
+    "dna": "DNA",
+    "evo2": "Evo2",
+    "gtex": "GTEx",
+    "gwas": "GWAS",
+    "ncbi": "NCBI",
+    "omim": "OMIM",
+    "pharmgkb": "PharmGKB",
+    "pubmed": "PubMed",
+    "rnaseq": "RNA-seq",
+    "tcga": "TCGA",
+    "ucsc": "UCSC",
+}
+
+_TOOL_ANNOTATION_OVERRIDES: dict[str, dict[str, bool | str]] = {
+    "run_blast": {
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": False,
+        "openWorldHint": True,
+    },
+    "multi_omics_gene_report": {
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": False,
+        "openWorldHint": True,
+    },
+    "generate_dna_evo2": {
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": False,
+        "openWorldHint": True,
+    },
+    "predict_structure_boltz2": {
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": False,
+        "openWorldHint": True,
+    },
+    "session": {
+        "readOnlyHint": False,
+        "destructiveHint": True,
+        "idempotentHint": False,
+        "openWorldHint": False,
+    },
+}
 
 CAPABILITY_CONFIG: dict[str, dict[str, Any]] = {
     "core_server": {
@@ -263,15 +333,41 @@ async def _progress_stream(
 # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
+def _tool_title(name: str) -> str:
+    tokens = []
+    for token in name.split("_"):
+        normalized = _TITLE_TOKEN_OVERRIDES.get(token.lower())
+        tokens.append(normalized or token.capitalize())
+    return " ".join(tokens)
+
+
+def _tool_annotations(name: str, title: str) -> Any:
+    defaults: dict[str, bool | str] = {
+        "title": title,
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": True,
+    }
+    defaults.update(_TOOL_ANNOTATION_OVERRIDES.get(name, {}))
+    if ToolAnnotations is None:
+        return defaults
+    return ToolAnnotations(**defaults)
+
+
 def _tool(name: str, description: str, properties: dict, required: list[str]) -> Tool:
+    title = _tool_title(name)
+    annotations = _tool_annotations(name, title)
     return Tool(
         name=name,
+        title=title,
         description=description,
         inputSchema={
             "type": "object",
             "properties": properties,
             "required": required,
         },
+        annotations=annotations,
     )
 
 
@@ -380,6 +476,7 @@ def _build_root_report(transport_mode: str | None = None) -> dict[str, Any]:
         "legacy_sse_url": f"{base_url}{SSE_PATH}" if mode == "http" else None,
         "health_url": f"{base_url}/healthz" if mode == "http" else None,
         "ready_url": f"{base_url}/readyz" if mode == "http" else None,
+        "status_url": f"{base_url}/status" if mode == "http" else None,
         "tool_health_url": f"{base_url}/tool-health" if mode == "http" else None,
     }
 
@@ -401,6 +498,163 @@ def _build_tool_health_report() -> dict[str, Any]:
         "ungated_tool_count": len(tool_names)
         - sum(len(cfg["tools"]) for cfg in gated_capabilities.values()),
     }
+
+
+def _cors_allowed_origins() -> list[str]:
+    configured = os.getenv("BIOMCP_CORS_ALLOW_ORIGINS", "").strip()
+    if not configured:
+        return []
+    if configured == "*":
+        return ["*"]
+
+    origins: list[str] = []
+    for raw_origin in configured.split(","):
+        origin = raw_origin.strip()
+        if origin and origin not in origins:
+            origins.append(origin)
+    return origins
+
+
+def _http_rate_limit_settings() -> dict[str, Any]:
+    enabled_flag = os.getenv("BIOMCP_HTTP_RATE_LIMIT_ENABLED", "1").strip().lower()
+    enabled = enabled_flag not in {"0", "false", "off", "disabled"}
+
+    try:
+        requests = int(os.getenv("BIOMCP_HTTP_RATE_LIMIT_REQUESTS", "120"))
+    except ValueError:
+        requests = 120
+
+    try:
+        window_seconds = int(os.getenv("BIOMCP_HTTP_RATE_LIMIT_WINDOW_SECONDS", "60"))
+    except ValueError:
+        window_seconds = 60
+
+    return {
+        "enabled": enabled,
+        "requests": max(1, requests),
+        "window_seconds": max(1, window_seconds),
+    }
+
+
+def _session_store_report(transport_mode: str) -> dict[str, Any]:
+    configured_dir = os.getenv("BIOMCP_SESSION_STORE_DIR", "").strip()
+    persistent = bool(configured_dir)
+    return {
+        "mode": "filesystem",
+        "configured_dir": configured_dir or ".biomcp_sessions",
+        "persistent_across_restarts": persistent if transport_mode == "http" else True,
+        "ephemeral_warning": transport_mode == "http" and not persistent,
+    }
+
+
+def _build_server_status_report(transport_mode: str | None = None) -> dict[str, Any]:
+    mode = transport_mode or os.getenv("BIOMCP_TRANSPORT", "stdio") or "stdio"
+    return {
+        "service": SERVER_NAME,
+        "display_name": SERVER_DISPLAY_NAME,
+        "version": __version__,
+        "transport_mode": mode,
+        "health": _build_health_report(mode),
+        "readiness": _build_readiness_report(mode),
+        "tool_health": _build_tool_health_report(),
+        "http_policy": {
+            "cors_allowed_origins": _cors_allowed_origins(),
+            "rate_limit": _http_rate_limit_settings(),
+        },
+        "cache_warming": {
+            "enabled": _cache_warming_enabled(mode),
+            "gene_panel": _cache_warm_gene_panel(),
+        },
+        "session_storage": _session_store_report(mode),
+    }
+
+
+def _client_identifier(scope: Any) -> str:
+    headers = dict(scope.get("headers", []))
+    forwarded_for = headers.get(b"x-forwarded-for", b"").decode("utf-8", errors="ignore").strip()
+    if forwarded_for:
+        return forwarded_for.split(",", 1)[0].strip()
+
+    client = scope.get("client")
+    if isinstance(client, tuple) and client:
+        return str(client[0])
+    return "unknown"
+
+
+async def _check_rate_limit(client_id: str, now: float | None = None) -> tuple[bool, int]:
+    global _HTTP_RATE_LIMIT_LOCK
+
+    settings = _http_rate_limit_settings()
+    if not settings["enabled"]:
+        return True, 0
+
+    if _HTTP_RATE_LIMIT_LOCK is None:
+        _HTTP_RATE_LIMIT_LOCK = asyncio.Lock()
+
+    current_time = now if now is not None else time.monotonic()
+    window_seconds = int(settings["window_seconds"])
+    request_limit = int(settings["requests"])
+
+    async with _HTTP_RATE_LIMIT_LOCK:
+        expired = [
+            key
+            for key, (window_start, _) in _HTTP_RATE_LIMIT_STATE.items()
+            if current_time - window_start >= window_seconds
+        ]
+        for key in expired:
+            _HTTP_RATE_LIMIT_STATE.pop(key, None)
+
+        window_start, count = _HTTP_RATE_LIMIT_STATE.get(client_id, (current_time, 0))
+        if current_time - window_start >= window_seconds:
+            window_start = current_time
+            count = 0
+
+        if count >= request_limit:
+            retry_after = max(1, int(window_seconds - (current_time - window_start)))
+            return False, retry_after
+
+        _HTTP_RATE_LIMIT_STATE[client_id] = (window_start, count + 1)
+        return True, 0
+
+
+class _RateLimitMiddleware:
+    def __init__(self, app: Any) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+        if scope.get("type") != "http":
+            await self.app(scope, receive, send)
+            return
+
+        path = str(scope.get("path", ""))
+        if path in _RATE_LIMIT_EXEMPT_PATHS or path.startswith(LOGO_ROUTE_PATH):
+            await self.app(scope, receive, send)
+            return
+
+        allowed, retry_after = await _check_rate_limit(_client_identifier(scope))
+        if allowed:
+            await self.app(scope, receive, send)
+            return
+
+        body = json.dumps(
+            {
+                "service": SERVER_NAME,
+                "status": "rate_limited",
+                "detail": "Too many requests. Retry later.",
+                "retry_after_s": retry_after,
+            }
+        ).encode("utf-8")
+        await send(
+            {
+                "type": "http.response.start",
+                "status": 429,
+                "headers": [
+                    (b"content-type", b"application/json"),
+                    (b"retry-after", str(retry_after).encode("ascii")),
+                ],
+            }
+        )
+        await send({"type": "http.response.body", "body": body})
 
 
 # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -674,7 +928,15 @@ TOOLS: list[Tool] = [
         "multi_omics_gene_report",
         "FLAGSHIP: 7-database parallel integration â€” NCBI Gene, PubMed, Reactome, "
         "ChEMBL, Open Targets, GEO, ClinicalTrials.gov. One call, complete overview.",
-        {"gene_symbol": _str_prop("HGNC gene symbol (e.g. 'EGFR', 'TP53', 'BRCA1', 'KRAS').")},
+        {
+            "gene_symbol": _str_prop("HGNC gene symbol (e.g. 'EGFR', 'TP53', 'BRCA1', 'KRAS')."),
+            "detail_level": _enum_prop(
+                "Response size budget. Use 'compact' for connector-friendly summaries, "
+                "'standard' for the default layer payloads, and 'full' to preserve full layer outputs.",
+                ["compact", "standard", "full"],
+                "compact",
+            ),
+        },
         ["gene_symbol"],
     ),
     _tool(
@@ -1534,7 +1796,7 @@ _PUBLIC_TOOL_EXAMPLES: dict[str, list[dict[str, Any]]] = {
             "max_results": 5,
         }
     ],
-    "multi_omics_gene_report": [{"gene_symbol": "MYC"}],
+    "multi_omics_gene_report": [{"gene_symbol": "MYC", "detail_level": "compact"}],
     "predict_structure_boltz2": [
         {
             "mode": "structure",
@@ -1634,6 +1896,7 @@ _PUBLIC_TOOL_EXAMPLES: dict[str, list[dict[str, Any]]] = {
 }
 
 _RESOURCE_CAPABILITIES_URI = "biomcp://server/capabilities"
+_RESOURCE_STATUS_URI = "biomcp://server/status"
 _RESOURCE_TOOL_CATALOG_URI = "biomcp://tools/catalog"
 _RESOURCE_SESSION_PREFIX = "biomcp://session/"
 _RESOURCE_METADATA: dict[str, dict[str, str]] = {
@@ -1646,6 +1909,11 @@ _RESOURCE_METADATA: dict[str, dict[str, str]] = {
         "name": "tool-catalog",
         "title": "BioMCP Tool Catalog",
         "description": "Public tool inventory with required arguments and example payloads.",
+    },
+    _RESOURCE_STATUS_URI: {
+        "name": "server-status",
+        "title": "BioMCP Runtime Status",
+        "description": "Deployment status, HTTP policy, persistence configuration, and capability health.",
     },
 }
 
@@ -1661,10 +1929,16 @@ def _tool_catalog_entries() -> list[dict[str, Any]]:
     return [
         {
             "name": tool.name,
+            "title": tool.title,
             "description": tool.description,
             "required": tool.inputSchema.get("required", []),
             "properties": list(tool.inputSchema.get("properties", {}).keys()),
             "examples": tool.inputSchema.get("examples", []),
+            "annotations": (
+                tool.annotations.model_dump(exclude_none=True)
+                if hasattr(tool.annotations, "model_dump")
+                else tool.annotations
+            ),
         }
         for tool in TOOLS
     ]
@@ -1707,7 +1981,7 @@ def _resource_payload(uri: str) -> dict[str, Any]:
                 "sse": SSE_PATH,
                 "messages": MESSAGE_PATH,
             },
-            "health_endpoints": ["/health", "/healthz", "/readyz", "/tool-health"],
+            "health_endpoints": ["/health", "/healthz", "/readyz", "/status", "/tool-health"],
             "public_tool_count": len(TOOLS),
             "resource_uris": resource_uris,
             "capabilities": _build_capability_status(),
@@ -1719,6 +1993,8 @@ def _resource_payload(uri: str) -> dict[str, Any]:
             "tool_count": len(TOOLS),
             "tools": _tool_catalog_entries(),
         }
+    if uri == _RESOURCE_STATUS_URI:
+        return _build_server_status_report(transport_mode=os.getenv("BIOMCP_TRANSPORT", "stdio"))
     if uri.startswith(_RESOURCE_SESSION_PREFIX):
         from biomcp.core.knowledge_graph import load_saved_session
 
@@ -1990,17 +2266,24 @@ async def _session_workflow(
     raise ValueError("Unsupported session action.")
 
 
-async def _dispatch_multi_omics_gene_report(gene_symbol: str) -> dict[str, Any]:
+async def _dispatch_multi_omics_gene_report(
+    gene_symbol: str,
+    detail_level: str = "compact",
+) -> dict[str, Any]:
     advanced_tools = _get_tool_modules()["advanced"]
 
     async with _progress_stream("multi_omics_gene_report", total_steps=7) as reporter:
         if reporter is None:
-            return await advanced_tools.multi_omics_gene_report(gene_symbol=gene_symbol)
+            return await advanced_tools.multi_omics_gene_report(
+                gene_symbol=gene_symbol,
+                detail_level=detail_level,
+            )
 
         await reporter.log(
             f"starting multi-omics report for {gene_symbol}",
             {
                 "gene": gene_symbol,
+                "detail_level": detail_level,
                 "layers": [
                     "genomics",
                     "literature",
@@ -2014,12 +2297,12 @@ async def _dispatch_multi_omics_gene_report(gene_symbol: str) -> dict[str, Any]:
         )
 
         cache = get_cache("multi_omics")
-        cache_key = make_cache_key(gene_symbol)
+        cache_key = make_cache_key(gene_symbol, detail_level=detail_level)
         if cache_key in cache:
             result = cache[cache_key]
             await reporter.finish(
                 f"served cached report for {gene_symbol}",
-                {"gene": gene_symbol, "cached": True},
+                {"gene": gene_symbol, "cached": True, "detail_level": detail_level},
             )
             return result
 
@@ -2031,6 +2314,7 @@ async def _dispatch_multi_omics_gene_report(gene_symbol: str) -> dict[str, Any]:
 
         result = await advanced_tools._multi_omics_gene_report_impl(
             gene_symbol,
+            detail_level=detail_level,
             progress_callback=_layer_progress,
         )
         cache[cache_key] = result
@@ -2483,11 +2767,11 @@ async def _run() -> None:
     )
 
     n_tools = len(TOOLS)
-    logger.info(f"ðŸ§¬ {SERVER_DISPLAY_NAME} v{__version__} starting â€” {n_tools} tools registered")
-    logger.info(f"   NCBI key : {'âœ“' if os.getenv('NCBI_API_KEY') else 'âœ— (3 req/s)'}")
-    logger.info(f"   Boltz-2  : {'âœ“' if os.getenv('NVIDIA_BOLTZ2_API_KEY') else 'âœ—'}")
-    logger.info(f"   Evo2     : {'âœ“' if os.getenv('NVIDIA_EVO2_API_KEY') else 'âœ—'}")
-    logger.info(f"   BioGRID  : {'âœ“' if os.getenv('BIOGRID_API_KEY') else 'âœ—'}")
+    logger.info(f"{SERVER_DISPLAY_NAME} v{__version__} starting - {n_tools} tools registered")
+    logger.info(f"   NCBI key : {'configured' if os.getenv('NCBI_API_KEY') else 'missing (3 req/s)'}")
+    logger.info(f"   Boltz-2  : {'configured' if os.getenv('NVIDIA_BOLTZ2_API_KEY') else 'missing'}")
+    logger.info(f"   Evo2     : {'configured' if os.getenv('NVIDIA_EVO2_API_KEY') else 'missing'}")
+    logger.info(f"   BioGRID  : {'configured' if os.getenv('BIOGRID_API_KEY') else 'missing'}")
 
     server = create_server()
     transport_mode = os.getenv("BIOMCP_TRANSPORT", "stdio")
@@ -2497,7 +2781,7 @@ async def _run() -> None:
 
     try:
         if transport_mode == "http":
-            logger.info(f"   ðŸŒ HTTP mode â€” port {http_port}")
+            logger.info(f"   HTTP mode - port {http_port}")
             from mcp.server.sse import SseServerTransport
             from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
             from starlette.applications import Starlette
@@ -2525,6 +2809,9 @@ async def _run() -> None:
 
             async def handle_tool_health(request):
                 return JSONResponse(_build_tool_health_report())
+
+            async def handle_status(request):
+                return JSONResponse(_build_server_status_report(transport_mode="http"))
 
             async def handle_root(request):
                 return JSONResponse(_build_root_report(transport_mode="http"))
@@ -2563,6 +2850,7 @@ async def _run() -> None:
                     Route("/healthz", endpoint=handle_health, methods=["GET"]),
                     Route("/readyz", endpoint=handle_readiness, methods=["GET"]),
                     Route("/tool-health", endpoint=handle_tool_health, methods=["GET"]),
+                    Route("/status", endpoint=handle_status, methods=["GET"]),
                     Route(SSE_PATH, endpoint=handle_sse, methods=["GET"]),
                     Route(STREAMABLE_HTTP_PATH, endpoint=handle_streamable_http_head, methods=["HEAD"]),
                     Route(STREAMABLE_HTTP_PATH, endpoint=streamable_http_app, methods=["GET", "POST", "DELETE"]),
@@ -2570,12 +2858,19 @@ async def _run() -> None:
                     Route("/", endpoint=handle_root, methods=["GET"]),
                 ],
             )
-            app.add_middleware(CORSMiddleware, allow_origins=["*"],
-                               allow_methods=["*"], allow_headers=["*"])
+            allowed_origins = _cors_allowed_origins()
+            if allowed_origins:
+                app.add_middleware(
+                    CORSMiddleware,
+                    allow_origins=allowed_origins,
+                    allow_methods=["*"],
+                    allow_headers=["*"],
+                )
+            app.add_middleware(_RateLimitMiddleware)
             import uvicorn
             await uvicorn.Server(uvicorn.Config(app, host="0.0.0.0", port=http_port)).serve()
         else:
-            logger.info("   ðŸ“Ÿ STDIO mode")
+            logger.info("   STDIO mode")
             async with stdio_server() as (read_stream, write_stream):
                 await server.run(
                     read_stream, write_stream,

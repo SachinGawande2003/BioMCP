@@ -5,14 +5,14 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![MCP Compatible](https://img.shields.io/badge/MCP-Compatible-green.svg)](https://modelcontextprotocol.io)
-[![Tools: 31](https://img.shields.io/badge/Tools-31-blue.svg)](#tools-31-curated-public-surface)
+[![Tools: 32](https://img.shields.io/badge/Tools-32-blue.svg)](#tools-32-curated-public-surface)
 [![Databases: 30+](https://img.shields.io/badge/Databases-30+-purple.svg)](#databases--ai-models)
 [![Live Demo](https://img.shields.io/badge/Live-Demo-brightgreen)](https://heuris-biomcp.onrender.com)
 
 **Strategic Model Context Protocol server for life sciences.**  
 Connect ChatGPT, Claude, and other MCP clients to a curated biology tool surface built for research, translational workflows, and production review.
 
-[🚀 Quick Start](#quick-start) • [🔧 Tools](#tools-31-curated-public-surface) • [📊 Databases](#databases--ai-models) • [💡 Examples](#usage-examples) • [🤝 Contributing](#contributing)
+[🚀 Quick Start](#quick-start) • [🔧 Tools](#tools-32-curated-public-surface) • [📊 Databases](#databases--ai-models) • [💡 Examples](#usage-examples) • [🤝 Contributing](#contributing)
 
 </div>
 
@@ -28,7 +28,13 @@ https://heuris-biomcp.onrender.com/mcp
 
 ### Connect to Live Server
 
-Add to your `claude_desktop_config.json`:
+For Claude, use `Customize > Connectors` and enter:
+
+```
+https://heuris-biomcp.onrender.com/mcp
+```
+
+For generic remote MCP clients that accept URL-based server definitions:
 
 ```json
 {
@@ -41,8 +47,6 @@ Add to your `claude_desktop_config.json`:
 ```
 
 > **Note**: `https://heuris-biomcp.onrender.com/mcp` is the recommended remote MCP endpoint for modern clients. The legacy SSE endpoint remains available at `https://heuris-biomcp.onrender.com/sse`.
->
-> **Claude update**: Anthropic now routes remote MCP connections through `Customize > Connectors`. Direct remote URLs in `claude_desktop_config.json` are no longer the recommended Claude Desktop path.
 
 ---
 
@@ -75,7 +79,7 @@ ChatGPT + Heuris-BioMCP -> Queries ChEMBL + ClinicalTrials.gov -> Structured ans
 
 ## What's New in v2.3
 
-- Curated the public MCP surface from a broad 71-tool registry down to a strategy-driven set of 31 review-friendly tools
+- Curated the public MCP surface from a broad 71-tool registry down to a strategy-driven set of 32 review-friendly tools
 - Merged operational suites into workflow tools: `find_protein`, `pathway_analysis`, `crispr_analysis`, `drug_safety`, `variant_analysis`, and `session`
 - Added new translational tools: `drug_interaction_checker`, `protein_binding_pocket`, `biomarker_panel_design`, `pharmacogenomics_report`, `protein_family_analysis`, `network_enrichment`, `rnaseq_deconvolution`, `structural_similarity`, `rare_disease_diagnosis`, and `genome_browser_snapshot`
 - Removed low-signal or niche tools from the public MCP registry while keeping lower-level code available internally
@@ -83,7 +87,7 @@ ChatGPT + Heuris-BioMCP -> Queries ChEMBL + ClinicalTrials.gov -> Structured ans
 
 ---
 
-## Tools (31 curated public surface)
+## Tools (32 curated public surface)
 
 ### Core Research
 | Tool | Description |
@@ -191,16 +195,16 @@ ChatGPT + Heuris-BioMCP -> Queries ChEMBL + ClinicalTrials.gov -> Structured ans
 
 ### Option 1: Use Live Demo (No Installation)
 
-Add to your Claude Desktop config:
+Use Claude's `Customize > Connectors` flow and enter:
 
-```json
-{
-  "mcpServers": {
-    "heuris-biomcp": {
-      "url": "https://heuris-biomcp.onrender.com/sse"
-    }
-  }
-}
+```
+https://heuris-biomcp.onrender.com/mcp
+```
+
+If you are connecting with an older MCP client that still expects SSE, use:
+
+```
+https://heuris-biomcp.onrender.com/sse
 ```
 
 ### Option 2: Deploy Your Own
@@ -221,6 +225,13 @@ Or manually:
 - Session snapshots saved through the `session` tool are only durable if `BIOMCP_SESSION_STORE_DIR` points to persistent storage.
 - On Render free tier, the default local directory uses ephemeral disk and will be wiped on restart, redeploy, or scale-to-zero wake-up.
 - If you need persistent saved sessions, set `BIOMCP_SESSION_STORE_DIR` to a mounted persistent path or move session persistence behind an external store before relying on cross-session restore.
+
+### Privacy, Support, and Data Handling
+
+- Privacy policy: [PRIVACY.md](PRIVACY.md)
+- Support channel: [SUPPORT.md](SUPPORT.md)
+- Data handling notes: [DATA_PROCESSING.md](DATA_PROCESSING.md)
+- Security reporting: [SECURITY.md](SECURITY.md)
 
 ### Option 3: Local Installation
 
@@ -425,6 +436,12 @@ biomcp/
 | `BIOGRID_API_KEY` | BioGRID key for curated interaction queries | None |
 | `BIOMCP_TRANSPORT` | Transport mode: `stdio` or `http` | `stdio` |
 | `BIOMCP_HTTP_PORT` | HTTP port for hosted SSE deployments | `8080` |
+| `BIOMCP_SESSION_STORE_DIR` | Durable directory for saved sessions | `.biomcp_sessions` |
+| `BIOMCP_CORS_ALLOW_ORIGINS` | Comma-separated browser origins allowed for CORS | disabled |
+| `BIOMCP_HTTP_RATE_LIMIT_ENABLED` | Enable per-client HTTP rate limiting | `1` |
+| `BIOMCP_HTTP_RATE_LIMIT_REQUESTS` | Requests allowed per rate-limit window | `120` |
+| `BIOMCP_HTTP_RATE_LIMIT_WINDOW_SECONDS` | Rate-limit window length in seconds | `60` |
+| `BIOMCP_CACHE_WARMING` | Enable background cache warming in HTTP mode | `auto` |
 | `BIOMCP_LOG_LEVEL` | Log level: DEBUG/INFO/WARNING/ERROR | INFO |
 
 Get free API keys:
@@ -439,9 +456,11 @@ When BioMCP runs in hosted HTTP mode, these operational routes are available:
 
 | Endpoint | Purpose |
 |----------|---------|
+| `/status` | Runtime status, HTTP policy, and session-storage configuration |
 | `/healthz` | Liveness and deployment metadata |
 | `/readyz` | Readiness check for orchestrators and load balancers |
 | `/tool-health` | Capability-level status, including missing optional API keys |
+| `/mcp` | Streamable HTTP MCP endpoint |
 | `/sse` | MCP SSE endpoint |
 | `/messages/` | MCP message transport endpoint |
 

@@ -10,6 +10,10 @@ services:
         value: http
       - key: BIOMCP_HTTP_PORT
         value: 10000
+      - key: BIOMCP_HTTP_RATE_LIMIT_REQUESTS
+        value: "120"
+      - key: BIOMCP_HTTP_RATE_LIMIT_WINDOW_SECONDS
+        value: "60"
       - key: BIOMCP_LOG_LEVEL
         value: INFO
       - key: PYTHON_VERSION

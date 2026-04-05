@@ -9,10 +9,9 @@ from __future__ import annotations
 import io
 import json
 import zipfile
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-
 
 # ── PubMed Search ────────────────────────────────────────────────────────────
 
@@ -171,6 +170,98 @@ def test_blast_zip_result_parses_current_ncbi_format():
     assert result["rid"] == "RID123"
     assert result["total_hits"] == 1
     assert result["hits"][0]["accession"] == "P04637"
+
+
+def test_blast_zip_manifest_resolves_referenced_result_file():
+    """BLAST parser should resolve manifest-style ZIP archives returned by NCBI."""
+    blast_json = {
+        "BlastOutput2": [
+            {
+                "report": {
+                    "results": {
+                        "search": {
+                            "query_len": 15,
+                            "hits": [
+                                {
+                                    "description": [{"accession": "P00533", "title": "EGFR"}],
+                                    "hsps": [
+                                        {
+                                            "align_len": 15,
+                                            "identity": 14,
+                                            "query_from": 1,
+                                            "query_to": 15,
+                                            "evalue": 1e-10,
+                                            "bit_score": 80.0,
+                                            "gaps": 0,
+                                            "positive": 15,
+                                        }
+                                    ],
+                                }
+                            ],
+                            "stat": {"db_num": 1},
+                        }
+                    }
+                }
+            }
+        ]
+    }
+    manifest = {"BlastJSON": [{"File": "RID123_1.json"}]}
+
+    archive = io.BytesIO()
+    with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as zip_handle:
+        zip_handle.writestr("index.json", json.dumps(manifest))
+        zip_handle.writestr("RID123_1.json", json.dumps(blast_json))
+
+    response = MagicMock()
+    response.content = archive.getvalue()
+    response.text = ""
+
+    from biomcp.tools.ncbi import _extract_blast_result_text, _parse_blast_json2
+
+    raw = _extract_blast_result_text(response, "RID123")
+    result = _parse_blast_json2(raw, "RID123", "blastp", "swissprot")
+
+    assert result["total_hits"] == 1
+    assert result["hits"][0]["accession"] == "P00533"
+
+
+def test_blast_parser_accepts_mapping_blastoutput2_shape():
+    blast_json = {
+        "BlastOutput2": {
+            "report": {
+                "results": {
+                    "search": {
+                        "query_len": 21,
+                        "hits": [
+                            {
+                                "description": [{"accession": "P01116", "title": "KRAS"}],
+                                "hsps": [
+                                    {
+                                        "align_len": 21,
+                                        "identity": 21,
+                                        "query_from": 1,
+                                        "query_to": 21,
+                                        "evalue": 1e-12,
+                                        "bit_score": 90.0,
+                                        "gaps": 0,
+                                        "positive": 21,
+                                    }
+                                ],
+                            }
+                        ],
+                        "stat": {"db_num": 1},
+                    }
+                }
+            }
+        }
+    }
+
+    from biomcp.tools.ncbi import _parse_blast_json2
+
+    result = _parse_blast_json2(json.dumps(blast_json), "RID999", "blastp", "swissprot")
+
+    assert result["total_hits"] == 1
+    assert result["hits"][0]["accession"] == "P01116"
 
 
 # ── Integration (Network Required) ──────────────────────────────────────────

@@ -240,3 +240,139 @@ async def test_get_protein_domain_structure_matches_lowercase_isoform_accessions
     assert result["domains"][0]["name"] == "Protein kinase domain"
     assert result["domains"][0]["start"] == 712
     assert result["domain_coverage_pct"] == 22.1
+
+
+@pytest.mark.asyncio
+async def test_get_protein_domain_structure_handles_missing_go_terms(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    class FakeResponse:
+        def __init__(self, payload: dict[str, object], status_code: int = 200):
+            self._payload = payload
+            self.status_code = status_code
+
+        def json(self) -> dict[str, object]:
+            return self._payload
+
+        def raise_for_status(self) -> None:
+            if self.status_code >= 400:
+                raise RuntimeError(f"HTTP {self.status_code}")
+
+    class FakeClient:
+        async def get(self, url: str, headers=None, params=None):
+            if "/entry/interpro/protein/uniprot/" in url:
+                return FakeResponse(
+                    {
+                        "results": [
+                            {
+                                "metadata": {
+                                    "accession": "IPR001245",
+                                    "name": "Signal peptide",
+                                    "type": "region",
+                                    "source_database": "InterPro",
+                                    "description": "Signal region",
+                                    "go_terms": None,
+                                },
+                                "proteins": [
+                                    {
+                                        "accession": "P04637",
+                                        "entry_protein_locations": [
+                                            {"fragments": [{"start": 1, "end": 20}]}
+                                        ],
+                                    }
+                                ],
+                            }
+                        ]
+                    }
+                )
+            if "/protein/uniprot/" in url:
+                return FakeResponse({"metadata": {"length": 393}})
+            raise AssertionError(f"Unexpected URL: {url}")
+
+    async def fake_get_http_client() -> FakeClient:
+        return FakeClient()
+
+    monkeypatch.setattr(innovations, "get_http_client", fake_get_http_client)
+    utils.get_cache("interpro").clear()
+
+    result = await innovations.get_protein_domain_structure("P04637")
+
+    assert result["total_domains"] == 1
+    assert result["domains"][0]["go_terms"] == []
+
+
+@pytest.mark.asyncio
+async def test_get_protein_domain_structure_merges_overlapping_coverage(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    class FakeResponse:
+        def __init__(self, payload: dict[str, object], status_code: int = 200):
+            self._payload = payload
+            self.status_code = status_code
+
+        def json(self) -> dict[str, object]:
+            return self._payload
+
+        def raise_for_status(self) -> None:
+            if self.status_code >= 400:
+                raise RuntimeError(f"HTTP {self.status_code}")
+
+    class FakeClient:
+        async def get(self, url: str, headers=None, params=None):
+            if "/entry/interpro/protein/uniprot/" in url:
+                return FakeResponse(
+                    {
+                        "results": [
+                            {
+                                "metadata": {
+                                    "accession": "IPR0001",
+                                    "name": "Domain A",
+                                    "type": "domain",
+                                    "source_database": "InterPro",
+                                    "description": "Domain A",
+                                    "go_terms": [],
+                                },
+                                "proteins": [
+                                    {
+                                        "accession": "P04637",
+                                        "entry_protein_locations": [
+                                            {"fragments": [{"start": 10, "end": 50}]}
+                                        ],
+                                    }
+                                ],
+                            },
+                            {
+                                "metadata": {
+                                    "accession": "IPR0002",
+                                    "name": "Domain B",
+                                    "type": "domain",
+                                    "source_database": "InterPro",
+                                    "description": "Domain B",
+                                    "go_terms": [],
+                                },
+                                "proteins": [
+                                    {
+                                        "accession": "P04637",
+                                        "entry_protein_locations": [
+                                            {"fragments": [{"start": 40, "end": 80}]}
+                                        ],
+                                    }
+                                ],
+                            },
+                        ]
+                    }
+                )
+            if "/protein/uniprot/" in url:
+                return FakeResponse({"metadata": {"length": 100}})
+            raise AssertionError(f"Unexpected URL: {url}")
+
+    async def fake_get_http_client() -> FakeClient:
+        return FakeClient()
+
+    monkeypatch.setattr(innovations, "get_http_client", fake_get_http_client)
+    utils.get_cache("interpro").clear()
+
+    result = await innovations.get_protein_domain_structure("P04637")
+
+    assert result["total_domains"] == 2
+    assert result["domain_coverage_pct"] == 71.0

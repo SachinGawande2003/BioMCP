@@ -58,6 +58,36 @@ async def test_get_biogrid_interactions_uses_configured_api_key(
 
 
 @pytest.mark.asyncio
+async def test_get_biogrid_interactions_accepts_integer_pubmed_id(
+    mock_http_client,
+    mock_http_response,
+):
+    response = mock_http_response(
+        json_data={
+            "54321": {
+                "OFFICIAL_SYMBOL_A": "TP53",
+                "OFFICIAL_SYMBOL_B": "ATM",
+                "EXPERIMENTAL_SYSTEM": "Affinity Capture-MS",
+                "EXPERIMENTAL_SYSTEM_TYPE": "physical",
+                "PUBMED_ID": 12345678,
+            }
+        }
+    )
+    mock_http_client.get = AsyncMock(return_value=response)
+
+    with (
+        patch("biomcp.tools.extended_databases.get_http_client", return_value=mock_http_client),
+        patch("biomcp.tools.extended_databases.os.getenv", return_value="test-biogrid-key"),
+    ):
+        from biomcp.tools.extended_databases import get_biogrid_interactions
+
+        result = await get_biogrid_interactions.__wrapped__.__wrapped__.__wrapped__("TP53")
+
+    assert result["returned"] == 1
+    assert result["interactions"][0]["pubmed_ids"] == ["12345678"]
+
+
+@pytest.mark.asyncio
 async def test_search_metabolomics_caps_remote_title_fan_out(
     mock_http_client,
     mock_http_response,

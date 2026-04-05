@@ -226,15 +226,37 @@ async def get_gtex_expression(
         headers={"Accept": "application/json"},
     )
 
-    if resp.status_code == 404:
+    def _extract_gene_expression_entries(payload: Any) -> list[dict[str, Any]]:
+        if isinstance(payload, list):
+            return [entry for entry in payload if isinstance(entry, dict)]
+        if isinstance(payload, dict):
+            raw_gene_expression = payload.get("geneExpression", [])
+            if isinstance(raw_gene_expression, list):
+                return [entry for entry in raw_gene_expression if isinstance(entry, dict)]
+            if isinstance(raw_gene_expression, dict):
+                return [raw_gene_expression]
+        return []
+
+    gene_expression: list[dict[str, Any]] = []
+    if resp.status_code == 200:
+        gene_expression = _extract_gene_expression_entries(resp.json().get("data", {}))
+
+    if resp.status_code == 404 or not gene_expression:
         gene_resp = await client.get(
             f"{GTEX_BASE}/reference/gene",
-            params={"geneSymbol": gene_symbol, "gencodeVersion": "v26"},
+            params={"geneId": gene_symbol, "gencodeVersion": "v26"},
         )
         if gene_resp.status_code != 200:
             return {"gene": gene_symbol, "error": f"Not found in GTEx {dataset_id}.",
                     "expression_by_tissue": []}
-        genes = gene_resp.json().get("data", {}).get("gene", [])
+        gene_payload = gene_resp.json().get("data", [])
+        if isinstance(gene_payload, list):
+            genes = gene_payload
+        elif isinstance(gene_payload, dict):
+            raw_genes = gene_payload.get("gene", [])
+            genes = raw_genes if isinstance(raw_genes, list) else []
+        else:
+            genes = []
         if not genes:
             return {"gene": gene_symbol, "error": "Not found in GTEx.",
                     "expression_by_tissue": []}
@@ -243,12 +265,13 @@ async def get_gtex_expression(
             f"{GTEX_BASE}/expression/geneExpression",
             params={"gencodeId": gencode_id, "datasetId": dataset_id},
         )
+        resp.raise_for_status()
+        gene_expression = _extract_gene_expression_entries(resp.json().get("data", {}))
 
     resp.raise_for_status()
-    data = resp.json().get("data", {})
 
     expression: list[dict[str, Any]] = []
-    for entry in data.get("geneExpression", []):
+    for entry in gene_expression:
         tissue_name = entry.get("tissueSiteDetailId", entry.get("tissueSite", ""))
         data_list   = entry.get("data", [])
         if not data_list:
@@ -508,7 +531,17 @@ async def get_disgenet_associations(
         }
     resp.raise_for_status()
 
-    data = resp.json()
+    try:
+        data = resp.json()
+    except ValueError:
+        return {
+            "gene": gene_symbol,
+            "error": (
+                "DisGeNET returned a non-JSON response. The service may be unavailable, "
+                "rate-limited, or require authentication."
+            ),
+            "associations": [],
+        }
     raw  = data if isinstance(data, list) else data.get("data", [])
 
     associations: list[dict[str, Any]] = []

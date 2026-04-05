@@ -224,9 +224,10 @@ async def test_multi_omics_gene_report_handles_partial_layer_failures():
     ):
         from biomcp.tools.advanced import multi_omics_gene_report
 
-        result = await multi_omics_gene_report.__wrapped__.__wrapped__("MYC")
+        result = await multi_omics_gene_report.__wrapped__.__wrapped__("MYC", detail_level="standard")
 
     assert result["gene"] == "MYC"
+    assert result["detail_level"] == "standard"
     assert result["layers"]["genomics"]["symbol"] == "MYC"
     assert result["layers"]["literature"]["total_publications"] == 2
     assert result["layers"]["literature"]["recent_papers"][0]["pmid"] == "4001"
@@ -309,6 +310,46 @@ async def test_multi_omics_gene_report_streams_layers_as_they_finish():
     ]
     assert result["layers"]["literature"]["total_publications"] == 1
     assert result["layers"]["genomics"]["symbol"] == "MYC"
+
+
+@pytest.mark.asyncio
+async def test_multi_omics_gene_report_compact_mode_trims_layer_payloads():
+    with (
+        patch("biomcp.tools.ncbi.get_gene_info", new=AsyncMock(return_value={
+            "symbol": "EGFR",
+            "description": "epidermal growth factor receptor",
+            "chromosome": "7",
+            "summary": "A" * 400,
+            "aliases": ["ERBB1", "mENA", "HER1"],
+        })),
+        patch("biomcp.tools.ncbi.search_pubmed", new=AsyncMock(return_value={
+            "total_found": 1,
+            "articles": [{"pmid": "1", "title": "Paper", "year": 2026, "journal": "Nature"}],
+        })),
+        patch("biomcp.tools.pathways.get_reactome_pathways", new=AsyncMock(return_value={
+            "pathways": [{"name": "RTK signaling", "species": "Homo sapiens", "found_entities": 2, "fdr": 0.01}],
+        })),
+        patch("biomcp.tools.pathways.get_drug_targets", new=AsyncMock(return_value={
+            "drugs": [{"name": "Gefitinib", "mechanism": "EGFR inhibitor", "max_phase": 4}],
+        })),
+        patch("biomcp.tools.pathways.get_gene_disease_associations", new=AsyncMock(return_value={
+            "associations": [{"disease_name": "Lung cancer", "association_score": 0.9}],
+        })),
+        patch("biomcp.tools.advanced.search_gene_expression", new=AsyncMock(return_value={
+            "datasets": [{"gse_id": "GSE1", "title": "EGFR expression", "platform": "RNA-seq"}],
+        })),
+        patch("biomcp.tools.advanced.search_clinical_trials", new=AsyncMock(return_value={
+            "studies": [{"nct_id": "NCT1", "brief_title": "EGFR trial", "status": "RECRUITING", "phase": "PHASE2"}],
+        })),
+    ):
+        from biomcp.tools.advanced import multi_omics_gene_report
+
+        result = await multi_omics_gene_report.__wrapped__.__wrapped__("EGFR", detail_level="compact")
+
+    assert result["detail_level"] == "compact"
+    assert "articles" not in result["layers"]["literature"]
+    assert "top_trials" in result["layers"]["clinical_trials"]
+    assert result["layers"]["genomics"]["summary"] == "A" * 280
 
 
 

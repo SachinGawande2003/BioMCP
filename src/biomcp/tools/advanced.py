@@ -443,8 +443,126 @@ def _compact_multi_omics_literature(literature: dict[str, Any]) -> dict[str, Any
     }
 
 
+def _compact_multi_omics_layer(label: str, payload: dict[str, Any]) -> dict[str, Any]:
+    if label == "literature":
+        return _compact_multi_omics_literature(payload)
+    if label == "genomics":
+        aliases = payload.get("aliases", [])
+        if not isinstance(aliases, list):
+            aliases = []
+        summary = str(payload.get("summary", "") or "")
+        return {
+            "symbol": payload.get("symbol", ""),
+            "name": payload.get("name") or payload.get("description", ""),
+            "organism": payload.get("organism", ""),
+            "chromosome": payload.get("chromosome", ""),
+            "location": payload.get("map_location") or payload.get("maplocation", ""),
+            "summary": summary[:280],
+            "aliases": aliases[:5],
+        }
+    if label == "reactome":
+        pathways = payload.get("pathways", [])
+        if not isinstance(pathways, list):
+            pathways = []
+        return {
+            "total_pathways": payload.get("total_pathways", len(pathways)),
+            "top_pathways": [
+                {
+                    "name": pathway.get("name", ""),
+                    "species": pathway.get("species", ""),
+                    "found_entities": pathway.get("found_entities", 0),
+                    "fdr": pathway.get("fdr"),
+                }
+                for pathway in pathways[:5]
+                if isinstance(pathway, dict)
+            ],
+        }
+    if label == "drug_targets":
+        drugs = payload.get("drugs", [])
+        if not isinstance(drugs, list):
+            drugs = []
+        return {
+            "total_drugs": payload.get("total_drugs", len(drugs)),
+            "top_drugs": [
+                {
+                    "name": drug.get("name", ""),
+                    "mechanism": drug.get("mechanism", ""),
+                    "phase": drug.get("max_phase"),
+                }
+                for drug in drugs[:5]
+                if isinstance(drug, dict)
+            ],
+        }
+    if label == "disease_associations":
+        associations = payload.get("associations", [])
+        if not isinstance(associations, list):
+            associations = []
+        return {
+            "total_associations": payload.get("total_associations", len(associations)),
+            "top_diseases": [
+                {
+                    "disease_name": association.get("disease_name", ""),
+                    "association_score": association.get("association_score")
+                    or association.get("score")
+                    or association.get("gda_score"),
+                }
+                for association in associations[:5]
+                if isinstance(association, dict)
+            ],
+        }
+    if label == "expression":
+        datasets = payload.get("datasets", [])
+        if not isinstance(datasets, list):
+            datasets = []
+        return {
+            "total_datasets": payload.get("total_found", len(datasets)),
+            "top_datasets": [
+                {
+                    "gse_id": dataset.get("gse_id") or dataset.get("accession", ""),
+                    "title": dataset.get("title", ""),
+                    "platform": dataset.get("platform", ""),
+                }
+                for dataset in datasets[:5]
+                if isinstance(dataset, dict)
+            ],
+        }
+    if label == "clinical_trials":
+        studies = payload.get("studies", [])
+        if not isinstance(studies, list):
+            studies = []
+        return {
+            "total_trials": payload.get("total_found", len(studies)),
+            "top_trials": [
+                {
+                    "nct_id": study.get("nct_id", ""),
+                    "brief_title": study.get("brief_title", ""),
+                    "status": study.get("status", ""),
+                    "phase": study.get("phase", ""),
+                }
+                for study in studies[:5]
+                if isinstance(study, dict)
+            ],
+        }
+    return payload
+
+
+def _shape_multi_omics_layer(
+    label: str,
+    payload: dict[str, Any],
+    detail_level: str,
+) -> dict[str, Any]:
+    if detail_level == "full":
+        return payload
+    if detail_level == "compact":
+        return _compact_multi_omics_layer(label, payload)
+    if label == "literature":
+        return _compact_multi_omics_literature(payload)
+    return payload
+
+
 async def _multi_omics_gene_report_impl(
     gene_symbol: str,
+    detail_level: str = "standard",
     progress_callback: _MultiOmicsProgressCallback | None = None,
 ) -> dict[str, Any]:
     from biomcp.tools.ncbi import get_gene_info, search_pubmed
@@ -455,6 +573,8 @@ async def _multi_omics_gene_report_impl(
     )
 
     gene_symbol = BioValidator.validate_gene_symbol(gene_symbol)
+    if detail_level not in {"compact", "standard", "full"}:
+        raise ValueError("detail_level must be one of compact, standard, or full.")
     logger.info(f"[Multi-Omics] Generating report for {gene_symbol}")
 
     layer_calls = [
@@ -469,10 +589,10 @@ async def _multi_omics_gene_report_impl(
 
     async def _run_layer(label: str, awaitable: Awaitable[dict[str, Any]]) -> tuple[str, dict[str, Any]]:
         try:
-            result = await awaitable
-            if label == "literature" and isinstance(result, dict) and "articles" in result:
-                result = _compact_multi_omics_literature(result)
-            return label, strip_cache_metadata(result)
+            result = strip_cache_metadata(await awaitable)
+            if isinstance(result, dict):
+                result = _shape_multi_omics_layer(label, result, detail_level)
+            return label, result
         except Exception as exc:
             logger.warning(f"[Multi-Omics] {label} failed: {exc}")
             return label, {"error": str(exc), "status": "failed"}
@@ -501,6 +621,7 @@ async def _multi_omics_gene_report_impl(
     return {
         "gene":          gene_symbol,
         "report_type":   "multi_omics_integrated",
+        "detail_level":  detail_level,
         "layers":        ordered_layers,
         "data_sources": [
             "NCBI Gene", "PubMed", "Reactome", "ChEMBL",
@@ -514,13 +635,16 @@ async def _multi_omics_gene_report_impl(
 
 @cached("multi_omics")       # FIX #6: was missing — every call re-fired all 7 queries
 @rate_limited("default")
-async def multi_omics_gene_report(gene_symbol: str) -> dict[str, Any]:
+async def multi_omics_gene_report(
+    gene_symbol: str,
+    detail_level: str = "compact",
+) -> dict[str, Any]:
     """
     Generate a comprehensive multi-omics report for a gene.
 
     Queries 7 databases simultaneously and returns an integrated report.
     """
-    return await _multi_omics_gene_report_impl(gene_symbol)
+    return await _multi_omics_gene_report_impl(gene_symbol, detail_level=detail_level)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

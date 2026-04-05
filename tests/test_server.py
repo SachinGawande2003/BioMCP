@@ -104,6 +104,22 @@ class TestToolRegistry:
         for tool in TOOLS:
             assert tool.description, f"Tool '{tool.name}' has empty description"
 
+    def test_all_tools_have_human_titles(self):
+        for tool in TOOLS:
+            assert tool.title, f"Tool '{tool.name}' is missing title metadata"
+
+    def test_all_tools_have_safety_annotations(self):
+        for tool in TOOLS:
+            assert tool.annotations is not None, f"Tool '{tool.name}' is missing annotations"
+            annotation_payload = (
+                tool.annotations.model_dump(exclude_none=True)
+                if hasattr(tool.annotations, "model_dump")
+                else tool.annotations
+            )
+            assert "readOnlyHint" in annotation_payload
+            assert "destructiveHint" in annotation_payload
+            assert "idempotentHint" in annotation_payload
+
     def test_all_tools_have_input_schema(self):
         for tool in TOOLS:
             assert tool.inputSchema, f"Tool '{tool.name}' missing inputSchema"
@@ -241,6 +257,7 @@ class TestMCPResources:
         resources = _list_resource_definitions()
         uris = {str(resource.uri) for resource in resources}
         assert "biomcp://server/capabilities" in uris
+        assert "biomcp://server/status" in uris
         assert "biomcp://tools/catalog" in uris
 
     def test_tool_catalog_resource_contains_examples(self):
@@ -260,7 +277,27 @@ class TestMCPResources:
         assert payload["transport_modes"] == ["stdio", "http"]
         assert payload["transport_endpoints"]["streamable_http"] == "/mcp"
         assert payload["transport_endpoints"]["sse"] == "/sse"
+        assert "/status" in payload["health_endpoints"]
         assert "/readyz" in payload["health_endpoints"]
+
+    def test_status_resource_includes_http_policy_and_session_storage(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        monkeypatch.setenv("BIOMCP_TRANSPORT", "http")
+        monkeypatch.setenv("BIOMCP_CORS_ALLOW_ORIGINS", "https://claude.ai,https://chatgpt.com")
+        monkeypatch.setenv("BIOMCP_SESSION_STORE_DIR", "persistent/sessions")
+
+        contents = _read_resource_contents("biomcp://server/status")
+        payload = json.loads(contents[0].content)
+
+        assert payload["transport_mode"] == "http"
+        assert payload["http_policy"]["cors_allowed_origins"] == [
+            "https://claude.ai",
+            "https://chatgpt.com",
+        ]
+        assert payload["session_storage"]["configured_dir"] == "persistent/sessions"
+        assert payload["session_storage"]["ephemeral_warning"] is False
 
     @pytest.mark.asyncio
     async def test_session_resources_are_listed_after_save(
@@ -487,7 +524,7 @@ class TestStreamingProgress:
         )
         advanced_module = SimpleNamespace()
 
-        async def _fake_impl(gene_symbol: str, progress_callback):
+        async def _fake_impl(gene_symbol: str, detail_level: str = "compact", progress_callback=None):
             for layer_name, payload in [
                 ("genomics", {"symbol": gene_symbol}),
                 ("literature", {"total_publications": 2, "recent_papers": []}),
@@ -498,18 +535,21 @@ class TestStreamingProgress:
                 ("clinical_trials", {"studies": [{"nct_id": "NCT1"}]}),
             ]:
                 await progress_callback(layer_name, payload)
-            return {"gene": gene_symbol, "layers": {}}
+            return {"gene": gene_symbol, "detail_level": detail_level, "layers": {}}
 
         advanced_module._multi_omics_gene_report_impl = _fake_impl
-        advanced_module.multi_omics_gene_report = AsyncMock(return_value={"gene": "EGFR", "layers": {}})
+        advanced_module.multi_omics_gene_report = AsyncMock(
+            return_value={"gene": "EGFR", "detail_level": "compact", "layers": {}}
+        )
 
         monkeypatch.setattr(server_module, "_SERVER_INSTANCE", SimpleNamespace(request_context=ctx))
         monkeypatch.setattr(server_module, "_get_tool_modules", lambda: {"advanced": advanced_module})
         monkeypatch.setattr(server_module, "get_cache", lambda namespace: {})
 
-        result = await server_module._dispatch_multi_omics_gene_report("EGFR")
+        result = await server_module._dispatch_multi_omics_gene_report("EGFR", detail_level="compact")
 
         assert result["gene"] == "EGFR"
+        assert result["detail_level"] == "compact"
         assert session.send_progress_notification.await_count == 7
         first_call = session.send_progress_notification.await_args_list[0]
         assert first_call.args[0] == "tok-1"
@@ -625,6 +665,7 @@ class TestOperationalHealth:
         assert report["recommended_remote_url"] == "https://example.com/biomcp/mcp"
         assert report["legacy_sse_url"] == "https://example.com/biomcp/sse"
         assert report["health_url"] == "https://example.com/biomcp/healthz"
+        assert report["status_url"] == "https://example.com/biomcp/status"
 
     def test_tool_health_reflects_missing_optional_keys(self, monkeypatch: pytest.MonkeyPatch):
         monkeypatch.delenv("NVIDIA_BOLTZ2_API_KEY", raising=False)
@@ -640,3 +681,22 @@ class TestOperationalHealth:
         assert gated["nvidia_evo2"]["status"] == "degraded"
         assert "predict_structure_boltz2" in gated["nvidia_boltz2"]["tools"]
         assert "generate_dna_evo2" in gated["nvidia_evo2"]["tools"]
+
+    def test_cors_allowed_origins_is_empty_by_default(self, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.delenv("BIOMCP_CORS_ALLOW_ORIGINS", raising=False)
+
+        assert server_module._cors_allowed_origins() == []
+
+    @pytest.mark.asyncio
+    async def test_rate_limit_blocks_after_window_capacity(self, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.setenv("BIOMCP_HTTP_RATE_LIMIT_ENABLED", "1")
+        monkeypatch.setenv("BIOMCP_HTTP_RATE_LIMIT_REQUESTS", "2")
+        monkeypatch.setenv("BIOMCP_HTTP_RATE_LIMIT_WINDOW_SECONDS", "60")
+        server_module._HTTP_RATE_LIMIT_STATE.clear()
+
+        assert await server_module._check_rate_limit("127.0.0.1", now=10.0) == (True, 0)
+        assert await server_module._check_rate_limit("127.0.0.1", now=11.0) == (True, 0)
+        allowed, retry_after = await server_module._check_rate_limit("127.0.0.1", now=12.0)
+
+        assert allowed is False
+        assert retry_after > 0

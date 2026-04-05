@@ -395,10 +395,58 @@ def _extract_blast_result_text(response: Any, rid: str) -> str:
 
     if raw_bytes and zipfile.is_zipfile(io.BytesIO(raw_bytes)):
         with zipfile.ZipFile(io.BytesIO(raw_bytes)) as archive:
+            referenced_json: str | None = None
+            first_json_payload: str | None = None
+
             for name in archive.namelist():
                 payload = archive.read(name)
-                if name.lower().endswith(".json") or payload.lstrip().startswith((b"{", b"[")):
-                    return payload.decode("utf-8", errors="replace")
+                if not (
+                    name.lower().endswith(".json")
+                    or payload.lstrip().startswith((b"{", b"["))
+                ):
+                    continue
+
+                text = payload.decode("utf-8", errors="replace")
+                if first_json_payload is None:
+                    first_json_payload = text
+
+                try:
+                    parsed = json.loads(text)
+                except json.JSONDecodeError:
+                    continue
+
+                if isinstance(parsed, dict) and "BlastOutput2" in parsed:
+                    return text
+
+                blast_json = parsed.get("BlastJSON")
+                if (
+                    referenced_json is None
+                    and isinstance(blast_json, list)
+                    and blast_json
+                    and isinstance(blast_json[0], dict)
+                    and isinstance(blast_json[0].get("File"), str)
+                ):
+                    referenced_json = blast_json[0]["File"]
+
+            if referenced_json:
+                candidates = [
+                    referenced_json,
+                    referenced_json.lstrip("/"),
+                    next(
+                        (
+                            name
+                            for name in archive.namelist()
+                            if name.rsplit("/", 1)[-1] == referenced_json.rsplit("/", 1)[-1]
+                        ),
+                        "",
+                    ),
+                ]
+                for candidate in candidates:
+                    if candidate and candidate in archive.namelist():
+                        return archive.read(candidate).decode("utf-8", errors="replace")
+
+            if first_json_payload is not None:
+                return first_json_payload
         raise RuntimeError(f"BLAST job {rid} returned a ZIP archive without a JSON payload.")
 
     text = raw_bytes.decode("utf-8", errors="replace") if raw_bytes else ""
@@ -424,8 +472,14 @@ def _parse_blast_json2(
 ) -> dict[str, Any]:
     """Parse BLAST JSON2 format into a clean summary dict."""
     try:
-        data    = json.loads(raw)
-        report  = data["BlastOutput2"][0]["report"]
+        data = json.loads(raw)
+        blast_output = data["BlastOutput2"]
+        if isinstance(blast_output, list):
+            report = blast_output[0]["report"]
+        elif isinstance(blast_output, dict):
+            report = blast_output.get("report", blast_output)
+        else:
+            raise TypeError("BlastOutput2 must be a list or mapping")
         search  = report["results"]["search"]
         raw_hits = search.get("hits", [])
 
