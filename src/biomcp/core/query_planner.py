@@ -38,7 +38,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
@@ -338,6 +338,7 @@ class AdaptiveQueryPlanner:
         self,
         plan: ResearchPlan,
         timeout_per_tool: float = 60.0,
+        progress_callback: Callable[[str, dict[str, Any]], Awaitable[None]] | None = None,
     ) -> dict[str, Any]:
         """
         Execute a research plan, respecting dependency order.
@@ -354,8 +355,24 @@ class AdaptiveQueryPlanner:
             logger.info(f"[Planner] Level {level_idx + 1}/{len(levels)}: "
                         f"running {[n.tool_name for n in level]} in parallel")
 
+            if progress_callback is not None:
+                await progress_callback(
+                    "level_started",
+                    {
+                        "level": level_idx + 1,
+                        "total_levels": len(levels),
+                        "tools": [node.tool_name for node in level],
+                    },
+                )
+
             tasks = [
-                asyncio.create_task(self._execute_node(node, timeout_per_tool))
+                asyncio.create_task(
+                    self._execute_node(
+                        node,
+                        timeout_per_tool,
+                        progress_callback=progress_callback,
+                    )
+                )
                 for node in level
             ]
             await asyncio.gather(*tasks, return_exceptions=True)
@@ -367,7 +384,7 @@ class AdaptiveQueryPlanner:
         elapsed = round(time.monotonic() - t_start, 2)
 
         # Build integrated report
-        return {
+        report = {
             "goal":              plan.goal,
             "strategy":          plan.strategy,
             "depth":             plan.depth,
@@ -376,11 +393,25 @@ class AdaptiveQueryPlanner:
             "results":           all_results,
             "insights":          self._synthesize_insights(plan, all_results),
         }
+        if progress_callback is not None:
+            summary = report["execution_summary"]
+            await progress_callback(
+                "plan_completed",
+                {
+                    "goal": plan.goal,
+                    "completed": summary["completed"],
+                    "failed": summary["failed"],
+                    "total_steps": summary["total_steps"],
+                    "elapsed_s": elapsed,
+                },
+            )
+        return report
 
     async def _execute_node(
         self,
         node: PlanNode,
         timeout: float,
+        progress_callback: Callable[[str, dict[str, Any]], Awaitable[None]] | None = None,
     ) -> None:
         """Execute a single plan node with timeout and error capture."""
         node.status     = NodeStatus.RUNNING
@@ -403,6 +434,15 @@ class AdaptiveQueryPlanner:
             node.error        = str(exc)
             node.completed_at = time.monotonic()
             logger.warning(f"[Planner] ✗ {node.tool_name}: {exc}")
+        finally:
+            if progress_callback is not None:
+                await progress_callback(
+                    "node_finished",
+                    {
+                        "node": node.to_dict(),
+                        "result": node.result,
+                    },
+                )
 
     def _synthesize_insights(
         self,
@@ -458,6 +498,7 @@ class AdaptiveQueryPlanner:
         depth: str = "standard",
         entities: dict[str, str] | None = None,
         timeout_per_tool: float = 60.0,
+        progress_callback: Callable[[str, dict[str, Any]], Awaitable[None]] | None = None,
     ) -> dict[str, Any]:
         """
         One-shot: build plan, execute it, return integrated report.
@@ -469,5 +510,9 @@ class AdaptiveQueryPlanner:
             timeout_per_tool: Per-tool timeout in seconds.
         """
         plan   = self.build_plan(goal, depth=depth, entities=entities)
-        result = await self.execute(plan, timeout_per_tool=timeout_per_tool)
+        result = await self.execute(
+            plan,
+            timeout_per_tool=timeout_per_tool,
+            progress_callback=progress_callback,
+        )
         return result

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from loguru import logger
@@ -25,6 +26,8 @@ from biomcp.utils import (
     rate_limited,
     with_retry,
 )
+
+_MultiOmicsProgressCallback = Callable[[str, dict[str, Any]], Awaitable[None]]
 
 CLINTRIALS_BASE = "https://clinicaltrials.gov/api/v2"
 ENSEMBL_BASE    = "https://rest.ensembl.org"
@@ -424,15 +427,25 @@ async def search_scrna_datasets(
 # Multi-Omics Gene Report — FIX #6: Added @cached("multi_omics")
 # ─────────────────────────────────────────────────────────────────────────────
 
-@cached("multi_omics")       # FIX #6: was missing — every call re-fired all 7 queries
-@rate_limited("default")
-async def multi_omics_gene_report(gene_symbol: str) -> dict[str, Any]:
-    """
-    Generate a comprehensive multi-omics report for a gene.
+def _compact_multi_omics_literature(literature: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "total_publications": literature.get("total_found", 0),
+        "recent_papers": [
+            {
+                "pmid": article["pmid"],
+                "title": article["title"],
+                "year": article["year"],
+                "journal": article["journal"],
+            }
+            for article in literature.get("articles", [])
+        ],
+    }
 
-    Queries 7 databases SIMULTANEOUSLY via asyncio.gather.
-    Now cached for 1 hour (TTL from CACHE_TTLS["multi_omics"] = 3600s).
-    """
+
+async def _multi_omics_gene_report_impl(
+    gene_symbol: str,
+    progress_callback: _MultiOmicsProgressCallback | None = None,
+) -> dict[str, Any]:
     from biomcp.tools.ncbi import get_gene_info, search_pubmed
     from biomcp.tools.pathways import (
         get_drug_targets,
@@ -443,44 +456,51 @@ async def multi_omics_gene_report(gene_symbol: str) -> dict[str, Any]:
     gene_symbol = BioValidator.validate_gene_symbol(gene_symbol)
     logger.info(f"[Multi-Omics] Generating report for {gene_symbol}")
 
-    results = await asyncio.gather(
-        get_gene_info(gene_symbol),
-        search_pubmed(f"{gene_symbol}[Gene] function mechanism review", max_results=5),
-        get_reactome_pathways(gene_symbol),
-        get_drug_targets(gene_symbol, max_results=10),
-        get_gene_disease_associations(gene_symbol, max_results=10),
-        search_gene_expression(gene_symbol, max_datasets=5),
-        search_clinical_trials(gene_symbol, max_results=5),
-        return_exceptions=True,
-    )
+    layer_calls = [
+        ("genomics", get_gene_info(gene_symbol)),
+        ("literature", search_pubmed(f"{gene_symbol}[Gene] function mechanism review", max_results=5)),
+        ("reactome", get_reactome_pathways(gene_symbol)),
+        ("drug_targets", get_drug_targets(gene_symbol, max_results=10)),
+        ("disease_associations", get_gene_disease_associations(gene_symbol, max_results=10)),
+        ("expression", search_gene_expression(gene_symbol, max_datasets=5)),
+        ("clinical_trials", search_clinical_trials(gene_symbol, max_results=5)),
+    ]
 
-    labels = ["genomics", "literature", "reactome", "drug_targets",
-              "disease_associations", "expression", "clinical_trials"]
+    async def _run_layer(label: str, awaitable: Awaitable[dict[str, Any]]) -> tuple[str, dict[str, Any]]:
+        try:
+            result = await awaitable
+            if label == "literature" and isinstance(result, dict) and "articles" in result:
+                result = _compact_multi_omics_literature(result)
+            return label, result
+        except Exception as exc:
+            logger.warning(f"[Multi-Omics] {label} failed: {exc}")
+            return label, {"error": str(exc), "status": "failed"}
 
-    layers: dict[str, Any] = {}
-    for label, res in zip(labels, results, strict=False):
-        if isinstance(res, Exception):
-            logger.warning(f"[Multi-Omics] {label} failed: {res}")
-            layers[label] = {"error": str(res), "status": "failed"}
-        else:
-            layers[label] = res
+    pending = [
+        asyncio.create_task(_run_layer(label, awaitable))
+        for label, awaitable in layer_calls
+    ]
 
-    # Compact literature layer
-    if "articles" in layers.get("literature", {}):
-        lit = layers.pop("literature")
-        layers["literature"] = {
-            "total_publications": lit.get("total_found", 0),
-            "recent_papers": [
-                {"pmid": a["pmid"], "title": a["title"],
-                 "year": a["year"], "journal": a["journal"]}
-                for a in lit.get("articles", [])
-            ],
-        }
+    completed_layers: dict[str, Any] = {}
+    for pending_task in asyncio.as_completed(pending):
+        label, layer_result = await pending_task
+        completed_layers[label] = layer_result
+        if progress_callback is not None:
+            try:
+                await progress_callback(label, layer_result)
+            except Exception as exc:
+                logger.debug(f"[Multi-Omics] Progress callback failed for {label}: {exc}")
+
+    ordered_layers = {
+        label: completed_layers[label]
+        for label, _ in layer_calls
+        if label in completed_layers
+    }
 
     return {
         "gene":          gene_symbol,
         "report_type":   "multi_omics_integrated",
-        "layers":        layers,
+        "layers":        ordered_layers,
         "data_sources": [
             "NCBI Gene", "PubMed", "Reactome", "ChEMBL",
             "Open Targets", "NCBI GEO", "ClinicalTrials.gov",
@@ -490,6 +510,16 @@ async def multi_omics_gene_report(gene_symbol: str) -> dict[str, Any]:
             "Layers with 'status: failed' can be retried individually."
         ),
     }
+
+@cached("multi_omics")       # FIX #6: was missing — every call re-fired all 7 queries
+@rate_limited("default")
+async def multi_omics_gene_report(gene_symbol: str) -> dict[str, Any]:
+    """
+    Generate a comprehensive multi-omics report for a gene.
+
+    Queries 7 databases simultaneously and returns an integrated report.
+    """
+    return await _multi_omics_gene_report_impl(gene_symbol)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

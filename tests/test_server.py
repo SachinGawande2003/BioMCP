@@ -6,6 +6,8 @@ from __future__ import annotations
 
 import importlib
 import json
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
@@ -332,6 +334,118 @@ class TestDispatchInitialization:
 
         assert build_count == 1
         assert server_module._DISPATCH_TABLE is stub_table
+
+
+class TestStreamingProgress:
+    @pytest.mark.asyncio
+    async def test_multi_omics_dispatch_streams_progress_notifications(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        session = SimpleNamespace(
+            send_progress_notification=AsyncMock(),
+            send_log_message=AsyncMock(),
+        )
+        ctx = SimpleNamespace(
+            meta=SimpleNamespace(progressToken="tok-1"),
+            session=session,
+            request_id="req-1",
+        )
+        advanced_module = SimpleNamespace()
+
+        async def _fake_impl(gene_symbol: str, progress_callback):
+            for layer_name, payload in [
+                ("genomics", {"symbol": gene_symbol}),
+                ("literature", {"total_publications": 2, "recent_papers": []}),
+                ("reactome", {"pathways": [{"id": "R-HSA-1"}]}),
+                ("drug_targets", {"drugs": [{"name": "DrugX"}]}),
+                ("disease_associations", {"associations": [{"disease_name": "Lung cancer"}]}),
+                ("expression", {"datasets": [{"gse": "GSE1"}]}),
+                ("clinical_trials", {"studies": [{"nct_id": "NCT1"}]}),
+            ]:
+                await progress_callback(layer_name, payload)
+            return {"gene": gene_symbol, "layers": {}}
+
+        advanced_module._multi_omics_gene_report_impl = _fake_impl
+        advanced_module.multi_omics_gene_report = AsyncMock(return_value={"gene": "EGFR", "layers": {}})
+
+        monkeypatch.setattr(server_module, "_SERVER_INSTANCE", SimpleNamespace(request_context=ctx))
+        monkeypatch.setattr(server_module, "_get_tool_modules", lambda: {"advanced": advanced_module})
+        monkeypatch.setattr(server_module, "get_cache", lambda namespace: {})
+
+        result = await server_module._dispatch_multi_omics_gene_report("EGFR")
+
+        assert result["gene"] == "EGFR"
+        assert session.send_progress_notification.await_count == 7
+        first_call = session.send_progress_notification.await_args_list[0]
+        assert first_call.args[0] == "tok-1"
+        assert first_call.args[1] == 1.0
+        assert first_call.kwargs["total"] == 7.0
+        assert "genomics ready" in first_call.kwargs["message"]
+        assert session.send_log_message.await_count == 8
+
+    @pytest.mark.asyncio
+    async def test_plan_and_execute_research_streams_progress_notifications(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        session = SimpleNamespace(
+            send_progress_notification=AsyncMock(),
+            send_log_message=AsyncMock(),
+        )
+        ctx = SimpleNamespace(
+            meta=SimpleNamespace(progressToken="tok-2"),
+            session=session,
+            request_id="req-2",
+        )
+
+        class FakePlanner:
+            def __init__(self, dispatcher):
+                self.dispatcher = dispatcher
+
+            def build_plan(self, goal: str, depth: str = "standard", entities=None):
+                return SimpleNamespace(goal=goal, strategy="demo", nodes=[object(), object()])
+
+            async def execute(self, plan, timeout_per_tool: float = 60.0, progress_callback=None):
+                assert progress_callback is not None
+                await progress_callback(
+                    "level_started",
+                    {"level": 1, "total_levels": 1, "tools": ["get_gene_info", "search_pubmed"]},
+                )
+                await progress_callback(
+                    "node_finished",
+                    {
+                        "node": {"tool": "get_gene_info", "status": "complete"},
+                        "result": {"symbol": "EGFR"},
+                    },
+                )
+                await progress_callback(
+                    "node_finished",
+                    {
+                        "node": {"tool": "search_pubmed", "status": "failed"},
+                        "result": {"error": "timed out"},
+                    },
+                )
+                await progress_callback(
+                    "plan_completed",
+                    {"completed": 1, "failed": 1, "total_steps": 2, "elapsed_s": 3.2},
+                )
+                return {"goal": plan.goal, "execution_summary": {"completed": 1, "failed": 1, "total_steps": 2}}
+
+        monkeypatch.setattr(server_module, "_SERVER_INSTANCE", SimpleNamespace(request_context=ctx))
+
+        with patch("biomcp.core.query_planner.AdaptiveQueryPlanner", FakePlanner):
+            result = await server_module._plan_and_execute_research("Understand EGFR")
+
+        assert result["goal"] == "Understand EGFR"
+        assert session.send_progress_notification.await_count == 3
+        progress_messages = [
+            call.kwargs["message"] for call in session.send_progress_notification.await_args_list
+        ]
+        assert any("get_gene_info complete" in message for message in progress_messages)
+        assert any("search_pubmed failed" in message for message in progress_messages)
+        assert progress_messages[-1].endswith("plan complete: 1/2 steps successful")
+        assert session.send_log_message.await_count == 5
 
 
 class TestServerBranding:

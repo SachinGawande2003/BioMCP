@@ -6,6 +6,7 @@ Unit tests for ClinicalTrials.gov, GEO, Ensembl, scRNA-seq, neuroimaging.
 
 from __future__ import annotations
 
+import asyncio
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -230,6 +231,77 @@ async def test_multi_omics_gene_report_handles_partial_layer_failures():
     assert result["layers"]["expression"]["status"] == "failed"
     assert result["layers"]["clinical_trials"]["studies"][0]["nct_id"] == "NCT0001"
     assert "status: failed" in result["note"]
+
+
+@pytest.mark.asyncio
+async def test_multi_omics_gene_report_streams_layers_as_they_finish():
+    progress_events: list[str] = []
+
+    async def _capture_progress(label: str, payload: dict[str, object]) -> None:
+        progress_events.append(label)
+
+    async def _delayed_result(payload: dict[str, object], delay: float) -> dict[str, object]:
+        await asyncio.sleep(delay)
+        return payload
+
+    async def _fake_get_gene_info(gene: str):
+        return await _delayed_result({"symbol": gene}, 0.03)
+
+    async def _fake_search_pubmed(query: str, max_results: int = 5):
+        return await _delayed_result(
+            {
+                "total_found": 1,
+                "articles": [
+                    {
+                        "pmid": "5001",
+                        "title": "MYC review",
+                        "year": 2026,
+                        "journal": "Nature",
+                    }
+                ],
+            },
+            0.0,
+        )
+
+    async def _fake_reactome(gene: str):
+        return await _delayed_result({"pathways": [{"id": "R-HSA-1"}]}, 0.02)
+
+    async def _fake_drug_targets(gene: str, max_results: int = 10):
+        return await _delayed_result({"drugs": [{"name": "DrugX"}]}, 0.01)
+
+    async def _fake_disease_associations(gene: str, max_results: int = 10):
+        return await _delayed_result({"associations": [{"disease_name": "Lymphoma"}]}, 0.04)
+
+    async def _fake_expression(gene: str, max_datasets: int = 5):
+        return await _delayed_result({"datasets": [{"gse": "GSE1"}]}, 0.015)
+
+    async def _fake_trials(gene: str, max_results: int = 5):
+        return await _delayed_result({"studies": [{"nct_id": "NCT1"}]}, 0.025)
+
+    with (
+        patch("biomcp.tools.ncbi.get_gene_info", new=_fake_get_gene_info),
+        patch("biomcp.tools.ncbi.search_pubmed", new=_fake_search_pubmed),
+        patch("biomcp.tools.pathways.get_reactome_pathways", new=_fake_reactome),
+        patch("biomcp.tools.pathways.get_drug_targets", new=_fake_drug_targets),
+        patch("biomcp.tools.pathways.get_gene_disease_associations", new=_fake_disease_associations),
+        patch("biomcp.tools.advanced.search_gene_expression", new=_fake_expression),
+        patch("biomcp.tools.advanced.search_clinical_trials", new=_fake_trials),
+    ):
+        from biomcp.tools.advanced import _multi_omics_gene_report_impl
+
+        result = await _multi_omics_gene_report_impl("MYC", progress_callback=_capture_progress)
+
+    assert progress_events == [
+        "literature",
+        "drug_targets",
+        "expression",
+        "reactome",
+        "clinical_trials",
+        "genomics",
+        "disease_associations",
+    ]
+    assert result["layers"]["literature"]["total_publications"] == 1
+    assert result["layers"]["genomics"]["symbol"] == "MYC"
 
 
 # ── Integration ──────────────────────────────────────────────────────────────

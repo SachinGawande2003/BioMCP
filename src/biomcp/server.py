@@ -9,11 +9,12 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import contextvars
 import importlib
 import json
 import os
 import sys
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 import httpx
@@ -24,7 +25,7 @@ from mcp.server.stdio import stdio_server
 from mcp.types import Resource, TextContent, Tool
 
 from biomcp import __version__
-from biomcp.utils import close_http_client, format_error, format_success
+from biomcp.utils import close_http_client, format_error, format_success, get_cache, make_cache_key
 
 # FIX #1: Removed duplicate import line that was here
 
@@ -38,6 +39,11 @@ LOGO_ROUTE_PATH = "/logo.jpeg"
 
 _DISPATCH_TABLE: dict[str, Callable[..., Any]] | None = None
 _TOOL_MODULES: dict[str, Any] | None = None
+_SERVER_INSTANCE: Server | None = None
+_ACTIVE_PROGRESS_OWNER: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "biomcp_progress_owner",
+    default=None,
+)
 
 CAPABILITY_CONFIG: dict[str, dict[str, Any]] = {
     "core_server": {
@@ -100,6 +106,123 @@ def _resolve_logo_path() -> str | None:
         if os.path.exists(candidate):
             return candidate
     return None
+
+
+def _get_request_context() -> Any | None:
+    if _SERVER_INSTANCE is None:
+        return None
+    try:
+        return _SERVER_INSTANCE.request_context
+    except LookupError:
+        return None
+
+
+def _summarize_partial_result(payload: Any) -> str:
+    if isinstance(payload, dict):
+        if "error" in payload:
+            return f"error: {payload['error']}"
+        for key, label in (
+            ("articles", "articles"),
+            ("pathways", "pathways"),
+            ("drugs", "drugs"),
+            ("associations", "associations"),
+            ("datasets", "datasets"),
+            ("studies", "studies"),
+            ("guides", "guides"),
+            ("variants", "variants"),
+        ):
+            items = payload.get(key)
+            if isinstance(items, list):
+                return f"{len(items)} {label}"
+        for key, label in (
+            ("total_found", "hits"),
+            ("total", "hits"),
+            ("returned", "items"),
+            ("total_reports", "reports"),
+        ):
+            value = payload.get(key)
+            if isinstance(value, int):
+                return f"{value} {label}"
+        for key in ("symbol", "gene", "nct_id", "accession"):
+            value = payload.get(key)
+            if value:
+                return str(value)
+    if isinstance(payload, list):
+        return f"{len(payload)} items"
+    return str(payload)[:120] if payload is not None else "completed"
+
+
+class _MCPProgressReporter:
+    def __init__(self, ctx: Any, tool_name: str, total_steps: int | None = None) -> None:
+        self._ctx = ctx
+        self._tool_name = tool_name
+        self._total_steps = float(total_steps) if total_steps is not None else None
+        self._current = 0.0
+        self._lock = asyncio.Lock()
+
+    async def log(self, message: str, data: dict[str, Any] | None = None) -> None:
+        await self._send(message=message, data=data)
+
+    async def advance(self, message: str, data: dict[str, Any] | None = None) -> None:
+        async with self._lock:
+            self._current += 1.0
+            await self._send(message=message, data=data, progress=self._current)
+
+    async def finish(self, message: str, data: dict[str, Any] | None = None) -> None:
+        async with self._lock:
+            if self._total_steps is not None:
+                self._current = self._total_steps
+            await self._send(message=message, data=data, progress=self._current)
+
+    async def _send(
+        self,
+        message: str,
+        data: dict[str, Any] | None = None,
+        progress: float | None = None,
+    ) -> None:
+        try:
+            if self._ctx.meta is not None and self._ctx.meta.progressToken is not None and progress is not None:
+                await self._ctx.session.send_progress_notification(
+                    self._ctx.meta.progressToken,
+                    progress,
+                    total=self._total_steps,
+                    message=f"{self._tool_name}: {message}",
+                )
+            await self._ctx.session.send_log_message(
+                "info",
+                {
+                    "tool": self._tool_name,
+                    "message": message,
+                    "progress": progress,
+                    "total": self._total_steps,
+                    "data": data or {},
+                },
+                logger=SERVER_NAME,
+                related_request_id=self._ctx.request_id,
+            )
+        except Exception as exc:
+            logger.debug(f"Progress notification failed for {self._tool_name}: {exc}")
+
+
+@contextlib.asynccontextmanager
+async def _progress_stream(
+    tool_name: str,
+    total_steps: int | None = None,
+) -> Any:
+    if _ACTIVE_PROGRESS_OWNER.get() is not None:
+        yield None
+        return
+
+    ctx = _get_request_context()
+    if ctx is None or ctx.meta is None or ctx.meta.progressToken is None:
+        yield None
+        return
+
+    token = _ACTIVE_PROGRESS_OWNER.set(tool_name)
+    try:
+        yield _MCPProgressReporter(ctx, tool_name, total_steps=total_steps)
+    finally:
+        _ACTIVE_PROGRESS_OWNER.reset(token)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1638,17 +1761,60 @@ async def _plan_and_execute_research(
     timeout_per_tool: int = 60,
 ) -> dict[str, Any]:
     from biomcp.core.query_planner import AdaptiveQueryPlanner
+
     entities: dict[str, str] = {}
     if gene:
         entities["gene"] = gene.upper()
     if uniprot:
         entities["uniprot"] = uniprot
+
     planner = AdaptiveQueryPlanner(dispatcher=_raw_dispatch)
-    return await planner.plan_and_execute(
-        goal=goal, depth=depth,
-        entities=entities or None,
-        timeout_per_tool=float(timeout_per_tool),
-    )
+    plan = planner.build_plan(goal=goal, depth=depth, entities=entities or None)
+
+    async with _progress_stream("plan_and_execute_research", total_steps=len(plan.nodes)) as reporter:
+        progress_callback: Callable[[str, dict[str, Any]], Awaitable[None]] | None = None
+        if reporter is not None:
+            await reporter.log(
+                f"plan ready with {len(plan.nodes)} steps",
+                {
+                    "goal": goal,
+                    "depth": depth,
+                    "strategy": plan.strategy,
+                    "total_steps": len(plan.nodes),
+                },
+            )
+
+            async def _planner_progress(event: str, payload: dict[str, Any]) -> None:
+                if event == "level_started":
+                    await reporter.log(
+                        f"starting level {payload['level']}/{payload['total_levels']}",
+                        payload,
+                    )
+                    return
+
+                if event == "node_finished":
+                    node = payload["node"]
+                    status = node["status"]
+                    summary = _summarize_partial_result(payload.get("result"))
+                    await reporter.advance(
+                        f"{node['tool']} {status}: {summary}",
+                        payload,
+                    )
+                    return
+
+                if event == "plan_completed":
+                    await reporter.finish(
+                        f"plan complete: {payload['completed']}/{payload['total_steps']} steps successful",
+                        payload,
+                    )
+
+            progress_callback = _planner_progress
+
+        return await planner.execute(
+            plan,
+            timeout_per_tool=float(timeout_per_tool),
+            progress_callback=progress_callback,
+        )
 
 
 async def _session_workflow(
@@ -1676,6 +1842,53 @@ async def _session_workflow(
             raise ValueError("goal or query is required when action='plan'.")
         return await _plan_and_execute_research(goal=plan_goal, depth=depth)
     raise ValueError("Unsupported session action.")
+
+
+async def _dispatch_multi_omics_gene_report(gene_symbol: str) -> dict[str, Any]:
+    advanced_tools = _get_tool_modules()["advanced"]
+
+    async with _progress_stream("multi_omics_gene_report", total_steps=7) as reporter:
+        if reporter is None:
+            return await advanced_tools.multi_omics_gene_report(gene_symbol=gene_symbol)
+
+        await reporter.log(
+            f"starting multi-omics report for {gene_symbol}",
+            {
+                "gene": gene_symbol,
+                "layers": [
+                    "genomics",
+                    "literature",
+                    "reactome",
+                    "drug_targets",
+                    "disease_associations",
+                    "expression",
+                    "clinical_trials",
+                ],
+            },
+        )
+
+        cache = get_cache("multi_omics")
+        cache_key = make_cache_key(gene_symbol)
+        if cache_key in cache:
+            result = cache[cache_key]
+            await reporter.finish(
+                f"served cached report for {gene_symbol}",
+                {"gene": gene_symbol, "cached": True},
+            )
+            return result
+
+        async def _layer_progress(layer_name: str, layer_result: dict[str, Any]) -> None:
+            await reporter.advance(
+                f"{layer_name} ready: {_summarize_partial_result(layer_result)}",
+                {"layer": layer_name, "result": layer_result},
+            )
+
+        result = await advanced_tools._multi_omics_gene_report_impl(
+            gene_symbol,
+            progress_callback=_layer_progress,
+        )
+        cache[cache_key] = result
+        return result
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1993,7 +2206,7 @@ def _build_dispatch_table() -> dict[str, Callable[..., Any]]:
         "search_scrna_datasets": _module_dispatch(advanced_tools, "search_scrna_datasets"),
         "search_clinical_trials": _module_dispatch(advanced_tools, "search_clinical_trials"),
         "get_trial_details": _module_dispatch(advanced_tools, "get_trial_details"),
-        "multi_omics_gene_report": _module_dispatch(advanced_tools, "multi_omics_gene_report"),
+        "multi_omics_gene_report": _dispatch_multi_omics_gene_report,
         "query_neuroimaging_datasets": _module_dispatch(advanced_tools, "query_neuroimaging_datasets"),
         "generate_research_hypothesis": _module_dispatch(
             sys.modules[__name__], "_generate_research_hypothesis"
@@ -2109,6 +2322,8 @@ async def _dispatch(name: str, args: dict[str, Any]) -> str:
 
 
 def create_server() -> Server:
+    global _SERVER_INSTANCE
+
     _get_dispatch_table()
 
     server_kwargs: dict[str, Any] = {
@@ -2159,6 +2374,7 @@ def create_server() -> Server:
         text = await _dispatch(name, arguments or {})
         return [TextContent(type="text", text=text)]
 
+    _SERVER_INSTANCE = server
     return server
 
 
