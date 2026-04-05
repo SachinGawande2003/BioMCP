@@ -221,6 +221,19 @@ def _decorate_cached_result(
     return response
 
 
+def strip_cache_metadata(payload: Any) -> Any:
+    """Recursively remove internal cache metadata from nested result payloads."""
+    if isinstance(payload, dict):
+        return {
+            key: strip_cache_metadata(value)
+            for key, value in payload.items()
+            if key != "_cache"
+        }
+    if isinstance(payload, list):
+        return [strip_cache_metadata(item) for item in payload]
+    return payload
+
+
 def cached(namespace: str, maxsize: int | None = None) -> Callable[[F], F]:
     """
     Decorator — cache async function results in a named TTL cache.
@@ -581,6 +594,7 @@ __all__ = [
     "cached",
     "get_cache",
     "make_cache_key",
+    "strip_cache_metadata",
     "rate_limited",
     "with_retry",
     "BioValidator",

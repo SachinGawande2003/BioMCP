@@ -30,7 +30,14 @@ from typing import Any
 
 from loguru import logger
 
-from biomcp.utils import BioValidator, cached, get_http_client, rate_limited, with_retry
+from biomcp.utils import (
+    BioValidator,
+    cached,
+    get_http_client,
+    rate_limited,
+    strip_cache_metadata,
+    with_retry,
+)
 
 _BIORXIV_API  = "https://api.biorxiv.org"
 _INTERPRO_API = "https://www.ebi.ac.uk/interpro/api"
@@ -193,10 +200,14 @@ async def bulk_gene_analysis(
         raw = await asyncio.gather(*tasks, return_exceptions=True)
         result: dict[str, Any] = {'gene': gene}
 
-        result['ncbi'] = raw[0] if not isinstance(raw[0], Exception) else {}
+        result['ncbi'] = (
+            strip_cache_metadata(raw[0]) if not isinstance(raw[0], Exception) else {}
+        )
         idx = 1
         if 'drugs' in axes:
-            drug_payload = raw[idx] if not isinstance(raw[idx], Exception) else {}
+            drug_payload = (
+                strip_cache_metadata(raw[idx]) if not isinstance(raw[idx], Exception) else {}
+            )
             result['drug_count'] = len(drug_payload.get('drugs', []))
             result['top_drugs'] = [
                 drug.get('molecule_name', '')
@@ -204,7 +215,9 @@ async def bulk_gene_analysis(
             ]
             idx += 1
         if 'diseases' in axes:
-            disease_payload = raw[idx] if not isinstance(raw[idx], Exception) else {}
+            disease_payload = (
+                strip_cache_metadata(raw[idx]) if not isinstance(raw[idx], Exception) else {}
+            )
             disease_names = [
                 association.get('disease_name', '')
                 for association in disease_payload.get('associations', [])
@@ -215,7 +228,9 @@ async def bulk_gene_analysis(
             result['top_diseases'] = disease_names[:3]
             idx += 1
         if 'pathways' in axes:
-            pathway_payload = raw[idx] if not isinstance(raw[idx], Exception) else {}
+            pathway_payload = (
+                strip_cache_metadata(raw[idx]) if not isinstance(raw[idx], Exception) else {}
+            )
             pathway_names = [
                 pathway.get('name', '')
                 for pathway in pathway_payload.get('pathways', [])

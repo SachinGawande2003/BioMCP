@@ -13,7 +13,7 @@ from uuid import uuid4
 import pytest
 
 import biomcp.utils as utils
-from biomcp.utils import CACHE_TTLS, BioValidator, get_cache, make_cache_key
+from biomcp.utils import CACHE_TTLS, BioValidator, get_cache, make_cache_key, strip_cache_metadata
 
 # ── BioValidator ─────────────────────────────────────────────────────────────
 
@@ -158,6 +158,25 @@ class TestCache:
         assert second["_cache"]["cached_at"] == first["_cache"]["cached_at"]
         assert second["_cache"]["age_s"] >= 0.0
         assert second["_cache"]["expires_in_s"] <= CACHE_TTLS["default"]
+
+    def test_strip_cache_metadata_removes_nested_cache_fields(self):
+        payload = {
+            "gene": "EGFR",
+            "_cache": {"status": "fresh"},
+            "layers": {
+                "genomics": {"symbol": "EGFR", "_cache": {"status": "cached"}},
+                "literature": [
+                    {"pmid": "1", "_cache": {"status": "cached"}},
+                    {"pmid": "2"},
+                ],
+            },
+        }
+
+        stripped = strip_cache_metadata(payload)
+
+        assert "_cache" not in stripped
+        assert "_cache" not in stripped["layers"]["genomics"]
+        assert all("_cache" not in article for article in stripped["layers"]["literature"])
 
 
 @pytest.mark.asyncio

@@ -403,9 +403,10 @@ async def search_metabolomics(
     """
     Search MetaboLights for metabolomics studies.
 
-    FIX #8: Replaced the sequential for-loop (up to 200 individual HTTP calls)
+    FIX #8: Replaced the sequential for-loop (up to 50 individual HTTP calls)
     with concurrent asyncio.gather capped at 10 simultaneous requests via
-    asyncio.Semaphore.  Worst-case latency drops from ~20s → ~2s.
+    asyncio.Semaphore.  Worst-case latency drops while staying below
+    MetaboLights-friendly fan-out on small hosted instances.
     """
     if not any([gene_symbol, metabolite, disease]):
         raise ValueError("Provide at least one of: gene_symbol, metabolite, or disease.")
@@ -421,8 +422,8 @@ async def search_metabolomics(
 
     if resp.status_code == 200:
         study_list = resp.json().get("content", [])
-        # Limit to first 200 candidates for scan
-        candidates = study_list[:200]
+        # Limit fan-out to reduce rate-limit/time-out risk on hosted instances.
+        candidates = study_list[:50]
 
         # ── FIX #8: concurrent fetch with semaphore ───────────────────────
         sem = asyncio.Semaphore(10)   # max 10 simultaneous requests

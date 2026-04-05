@@ -24,6 +24,7 @@ from biomcp.utils import (
     get_http_client,
     ncbi_params,
     rate_limited,
+    strip_cache_metadata,
     with_retry,
 )
 
@@ -471,7 +472,7 @@ async def _multi_omics_gene_report_impl(
             result = await awaitable
             if label == "literature" and isinstance(result, dict) and "articles" in result:
                 result = _compact_multi_omics_literature(result)
-            return label, result
+            return label, strip_cache_metadata(result)
         except Exception as exc:
             logger.warning(f"[Multi-Omics] {label} failed: {exc}")
             return label, {"error": str(exc), "status": "failed"}

@@ -58,3 +58,45 @@ async def test_saved_session_round_trip(monkeypatch: pytest.MonkeyPatch):
     finally:
         knowledge_graph_module.reset_skg()
         shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+@pytest.mark.asyncio
+async def test_session_knowledge_graph_enforces_node_and_edge_caps(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("BIOMCP_SKG_MAX_NODES", "2")
+    monkeypatch.setenv("BIOMCP_SKG_MAX_EDGES", "1")
+    knowledge_graph_module.reset_skg()
+
+    try:
+        skg = await knowledge_graph_module.get_skg()
+
+        egfr = await skg.upsert_node("EGFR", knowledge_graph_module.NodeType.GENE, source="test")
+        lung = await skg.upsert_node("Lung cancer", knowledge_graph_module.NodeType.DISEASE, source="test")
+        overflow = await skg.upsert_node("BRCA1", knowledge_graph_module.NodeType.GENE, source="test")
+
+        assert egfr.node_id in skg._nodes
+        assert lung.node_id in skg._nodes
+        assert overflow.node_id not in skg._nodes
+        assert skg.stats()["nodes"] == 2
+
+        first_edge = await skg.upsert_edge(
+            "EGFR",
+            knowledge_graph_module.NodeType.GENE,
+            knowledge_graph_module.EdgeType.ASSOCIATED_WITH,
+            "Lung cancer",
+            knowledge_graph_module.NodeType.DISEASE,
+            source="test",
+        )
+        second_edge = await skg.upsert_edge(
+            "EGFR",
+            knowledge_graph_module.NodeType.GENE,
+            knowledge_graph_module.EdgeType.INTERACTS_WITH,
+            "MDM2",
+            knowledge_graph_module.NodeType.GENE,
+            source="test",
+        )
+
+        assert first_edge is not None
+        assert second_edge is None
+        assert skg.stats()["edges"] == 1
+    finally:
+        knowledge_graph_module.reset_skg()

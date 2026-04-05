@@ -55,3 +55,34 @@ async def test_get_biogrid_interactions_uses_configured_api_key(
     assert result["interactions"][0]["partner_gene"] == "MDM2"
     _, kwargs = mock_http_client.get.await_args
     assert kwargs["params"]["accesskey"] == "test-biogrid-key"
+
+
+@pytest.mark.asyncio
+async def test_search_metabolomics_caps_remote_title_fan_out(
+    mock_http_client,
+    mock_http_response,
+):
+    title_calls: list[str] = []
+
+    async def _fake_get(url: str, headers=None, timeout=None):
+        if url.endswith("/study/list"):
+            return mock_http_response(
+                json_data={"content": [f"MTBLS{i}" for i in range(1, 101)]}
+            )
+        if "/study/" in url and url.endswith("/title"):
+            study_id = url.split("/")[-2]
+            title_calls.append(study_id)
+            return mock_http_response(json_data={"content": f"TP53 metabolomics {study_id}"})
+        raise AssertionError(f"Unexpected URL: {url}")
+
+    mock_http_client.get = AsyncMock(side_effect=_fake_get)
+
+    with patch("biomcp.tools.extended_databases.get_http_client", return_value=mock_http_client):
+        from biomcp.tools.extended_databases import search_metabolomics
+
+        result = await search_metabolomics.__wrapped__.__wrapped__.__wrapped__(gene_symbol="TP53")
+
+    assert result["total_found"] == 10
+    assert len(title_calls) == 50
+    assert title_calls[0] == "MTBLS1"
+    assert title_calls[-1] == "MTBLS50"

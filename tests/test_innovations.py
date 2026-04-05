@@ -129,6 +129,53 @@ async def test_bulk_gene_analysis_preserves_legacy_mode(monkeypatch: pytest.Monk
 
 
 @pytest.mark.asyncio
+async def test_bulk_gene_analysis_strips_nested_cache_metadata(monkeypatch: pytest.MonkeyPatch):
+    import biomcp.tools.ncbi as ncbi_module
+    import biomcp.tools.pathways as pathway_module
+
+    async def fake_get_gene_info(gene_symbol: str) -> dict[str, object]:
+        return {"symbol": gene_symbol, "_cache": {"status": "cached"}}
+
+    async def fake_get_drug_targets(gene_symbol: str, max_results: int = 10) -> dict[str, object]:
+        return {
+            "drugs": [{"molecule_name": "DrugA"}],
+            "_cache": {"status": "cached"},
+        }
+
+    async def fake_get_gene_disease_associations(
+        gene_symbol: str,
+        max_results: int = 12,
+    ) -> dict[str, object]:
+        return {
+            "total_associations": 1,
+            "associations": [{"disease_name": "Shared disease"}],
+            "_cache": {"status": "cached"},
+        }
+
+    async def fake_get_reactome_pathways(gene_symbol: str) -> dict[str, object]:
+        return {
+            "total": 1,
+            "pathways": [{"name": "Shared pathway"}],
+            "_cache": {"status": "cached"},
+        }
+
+    monkeypatch.setattr(ncbi_module, "get_gene_info", fake_get_gene_info)
+    monkeypatch.setattr(pathway_module, "get_drug_targets", fake_get_drug_targets)
+    monkeypatch.setattr(
+        pathway_module,
+        "get_gene_disease_associations",
+        fake_get_gene_disease_associations,
+    )
+    monkeypatch.setattr(pathway_module, "get_reactome_pathways", fake_get_reactome_pathways)
+
+    result = await bulk_gene_analysis(gene_symbols=["EGFR", "ERBB2"])
+
+    per_gene = result["per_gene"]["EGFR"]
+    assert "_cache" not in per_gene["ncbi"]
+    assert "_cache" not in per_gene
+
+
+@pytest.mark.asyncio
 async def test_get_protein_domain_structure_matches_lowercase_isoform_accessions(
     monkeypatch: pytest.MonkeyPatch,
 ):

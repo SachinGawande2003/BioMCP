@@ -1,4 +1,4 @@
-"""
+﻿"""
 Heuris-BioMCP strategic MCP server.
 
 This server exposes the curated public MCP surface while retaining lower-level
@@ -258,9 +258,9 @@ async def _progress_stream(
         _ACTIVE_PROGRESS_OWNER.reset(token)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # Tool Schema Helpers
-# ─────────────────────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 def _tool(name: str, description: str, properties: dict, required: list[str]) -> Tool:
@@ -403,14 +403,14 @@ def _build_tool_health_report() -> dict[str, Any]:
     }
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # Complete Tool Registry
-# ─────────────────────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 TOOLS: list[Tool] = [
-    # ════════════════════════════════════════════════════════════════════
+    # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     # CATEGORY 1: Literature & NCBI (3 tools)
-    # ════════════════════════════════════════════════════════════════════
+    # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     _tool(
         "search_pubmed",
         "Search PubMed for scientific literature. Supports full NCBI query syntax "
@@ -426,7 +426,7 @@ TOOLS: list[Tool] = [
     ),
     _tool(
         "get_gene_info",
-        "Retrieve gene information from NCBI Gene — symbol, full name, chromosomal "
+        "Retrieve gene information from NCBI Gene â€” symbol, full name, chromosomal "
         "location, aliases, RefSeq IDs, and functional summary. "
         "Auto-indexes gene entity into session knowledge graph.",
         {
@@ -438,7 +438,7 @@ TOOLS: list[Tool] = [
     _tool(
         "run_blast",
         "Run NCBI BLAST sequence alignment (blastp/blastn/blastx/tblastn). "
-        "Async polling — waits up to 120s for results.",
+        "Async polling â€” waits up to 120s for results.",
         {
             "sequence": _str_prop("Amino acid or nucleotide sequence (raw or FASTA)."),
             "program": _enum_prop(
@@ -451,9 +451,9 @@ TOOLS: list[Tool] = [
         },
         ["sequence"],
     ),
-    # ════════════════════════════════════════════════════════════════════
+    # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     # CATEGORY 2: Proteins & Structures (4 tools)
-    # ════════════════════════════════════════════════════════════════════
+    # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     _tool(
         "get_protein_info",
         "Full UniProt Swiss-Prot entry: function, domains, PTMs, GO terms, disease "
@@ -476,7 +476,7 @@ TOOLS: list[Tool] = [
     _tool(
         "get_alphafold_structure",
         "AlphaFold DB predicted structure: per-residue pLDDT confidence stats, "
-        "PDB/mmCIF download URLs. pLDDT ≥90=very high, 70–90=confident, <50=disordered.",
+        "PDB/mmCIF download URLs. pLDDT â‰¥90=very high, 70â€“90=confident, <50=disordered.",
         {
             "uniprot_accession": _str_prop("UniProt accession (e.g. 'P04637')."),
             "model_version": _str_prop("AlphaFold model version. Default: v4."),
@@ -493,14 +493,14 @@ TOOLS: list[Tool] = [
         },
         ["query"],
     ),
-    # ════════════════════════════════════════════════════════════════════
+    # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     # CATEGORY 3: Pathways (3 tools)
-    # ════════════════════════════════════════════════════════════════════
+    # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     _tool(
         "search_pathways",
         "Search KEGG for biological pathways with viewer URLs and diagram images.",
         {
-            "query": _str_prop("Keyword — pathway name, gene, disease."),
+            "query": _str_prop("Keyword â€” pathway name, gene, disease."),
             "organism": _str_prop("KEGG organism code. Default: 'hsa' (human)."),
         },
         ["query"],
@@ -514,20 +514,20 @@ TOOLS: list[Tool] = [
     _tool(
         "get_reactome_pathways",
         "Get Reactome pathways for a gene with hierarchy and diagram URLs. "
-        "Auto-indexes gene→pathway edges into session knowledge graph.",
+        "Auto-indexes geneâ†’pathway edges into session knowledge graph.",
         {
             "gene_symbol": _str_prop("HGNC gene symbol."),
             "species": _str_prop("NCBI taxonomy ID. Default: '9606' (Homo sapiens)."),
         },
         ["gene_symbol"],
     ),
-    # ════════════════════════════════════════════════════════════════════
+    # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     # CATEGORY 4: Drug Discovery (3 tools)
-    # ════════════════════════════════════════════════════════════════════
+    # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     _tool(
         "get_drug_targets",
         "ChEMBL drug-target activities: IC50, Ki, Kd values, assay types, "
-        "approval status. Auto-indexes drug→gene edges into knowledge graph.",
+        "approval status. Auto-indexes drugâ†’gene edges into knowledge graph.",
         {
             "gene_symbol": _str_prop("Target gene symbol (e.g. 'EGFR', 'BRAF', 'KRAS')."),
             "max_results": _int_prop("Drug entries", 20, 1, 100),
@@ -545,20 +545,20 @@ TOOLS: list[Tool] = [
         "get_gene_disease_associations",
         "Open Targets gene-disease evidence across 6 datatypes: genetic_association, "
         "somatic_mutation, known_drug, animal_model, affected_pathway, literature. "
-        "Auto-indexes gene→disease edges into knowledge graph.",
+        "Auto-indexes geneâ†’disease edges into knowledge graph.",
         {
             "gene_symbol": _str_prop("HGNC gene symbol."),
             "max_results": _int_prop("Associations", 15, 1, 50),
         },
         ["gene_symbol"],
     ),
-    # ════════════════════════════════════════════════════════════════════
+    # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     # CATEGORY 5: Genomics & Expression (3 tools)
-    # ════════════════════════════════════════════════════════════════════
+    # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     _tool(
         "get_gene_variants",
         "Ensembl variants: SNPs, indels, VEP consequence types, clinical significance. "
-        "Auto-indexes gene→variant edges into knowledge graph.",
+        "Auto-indexes geneâ†’variant edges into knowledge graph.",
         {
             "gene_symbol": _str_prop("HGNC gene symbol."),
             "consequence_type": _str_prop("VEP consequence filter. Default: 'missense_variant'."),
@@ -586,13 +586,13 @@ TOOLS: list[Tool] = [
         },
         ["tissue"],
     ),
-    # ════════════════════════════════════════════════════════════════════
+    # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     # CATEGORY 6: Clinical (2 tools)
-    # ════════════════════════════════════════════════════════════════════
+    # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     _tool(
         "search_clinical_trials",
         "ClinicalTrials.gov v2: trial status, phase, interventions, enrollment, "
-        "eligibility. Auto-indexes drug→disease treatment edges from trials.",
+        "eligibility. Auto-indexes drugâ†’disease treatment edges from trials.",
         {
             "query": _str_prop("Disease, drug, gene, or condition."),
             "status": _enum_prop(
@@ -613,9 +613,9 @@ TOOLS: list[Tool] = [
         {"nct_id": _str_prop("NCT identifier (e.g. 'NCT04280705').")},
         ["nct_id"],
     ),
-    # ════════════════════════════════════════════════════════════════════
-    # CATEGORY 7: AI-Powered — NVIDIA NIM (4 tools)
-    # ════════════════════════════════════════════════════════════════════
+    # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    # CATEGORY 7: AI-Powered â€” NVIDIA NIM (4 tools)
+    # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     _tool(
         "predict_structure_boltz2",
         "MIT Boltz-2 via NVIDIA NIM: protein/DNA/RNA/ligand structure prediction + "
@@ -659,7 +659,7 @@ TOOLS: list[Tool] = [
     ),
     _tool(
         "design_protein_ligand",
-        "Full drug-discovery pipeline: UniProt fetch → Boltz-2 structure + affinity in one call.",
+        "Full drug-discovery pipeline: UniProt fetch â†’ Boltz-2 structure + affinity in one call.",
         {
             "uniprot_accession": _str_prop("Target protein UniProt ID."),
             "ligand_smiles": _str_prop("Drug SMILES string."),
@@ -667,12 +667,12 @@ TOOLS: list[Tool] = [
         },
         ["uniprot_accession", "ligand_smiles"],
     ),
-    # ════════════════════════════════════════════════════════════════════
+    # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     # CATEGORY 8: Integrated & Advanced (3 tools)
-    # ════════════════════════════════════════════════════════════════════
+    # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     _tool(
         "multi_omics_gene_report",
-        "FLAGSHIP: 7-database parallel integration — NCBI Gene, PubMed, Reactome, "
+        "FLAGSHIP: 7-database parallel integration â€” NCBI Gene, PubMed, Reactome, "
         "ChEMBL, Open Targets, GEO, ClinicalTrials.gov. One call, complete overview.",
         {"gene_symbol": _str_prop("HGNC gene symbol (e.g. 'EGFR', 'TP53', 'BRCA1', 'KRAS').")},
         ["gene_symbol"],
@@ -692,16 +692,16 @@ TOOLS: list[Tool] = [
     ),
     _tool(
         "generate_research_hypothesis",
-        "Literature mining → data-driven testable hypotheses with supporting evidence.",
+        "Literature mining â†’ data-driven testable hypotheses with supporting evidence.",
         {
             "topic": _str_prop("Research topic."),
             "max_hypotheses": _int_prop("Hypotheses to generate", 3, 1, 10),
         },
         ["topic"],
     ),
-    # ════════════════════════════════════════════════════════════════════
+    # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     # CATEGORY 9: Extended Databases (7 tools)
-    # ════════════════════════════════════════════════════════════════════
+    # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     _tool(
         "get_omim_gene_diseases",
         "OMIM genetic disease-gene relationships with inheritance patterns.",
@@ -751,7 +751,7 @@ TOOLS: list[Tool] = [
         "DisGeNET comprehensive gene-disease associations with GDA scores.",
         {
             "gene_symbol": _str_prop("HGNC gene symbol."),
-            "min_score": _float_prop("Minimum GDA score (0–1). Default 0.1.", 0.1),
+            "min_score": _float_prop("Minimum GDA score (0â€“1). Default 0.1.", 0.1),
             "max_results": _int_prop("Associations", 20, 1, 100),
         },
         ["gene_symbol"],
@@ -765,12 +765,12 @@ TOOLS: list[Tool] = [
         },
         ["gene_symbol"],
     ),
-    # ════════════════════════════════════════════════════════════════════
+    # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     # CATEGORY 10: Verification & Conflict Detection (2 tools)
-    # ════════════════════════════════════════════════════════════════════
+    # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     _tool(
         "verify_biological_claim",
-        "Verify a biological claim against 3–5 databases with graded evidence.",
+        "Verify a biological claim against 3â€“5 databases with graded evidence.",
         {
             "claim": _str_prop("Natural language biological claim to verify."),
             "context_gene": _str_prop("Optional gene symbol to focus evidence gathering."),
@@ -783,9 +783,9 @@ TOOLS: list[Tool] = [
         {"gene_symbol": _str_prop("HGNC gene symbol to scan for cross-database conflicts.")},
         ["gene_symbol"],
     ),
-    # ════════════════════════════════════════════════════════════════════
+    # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     # CATEGORY 11: Experimental Design (3 tools)
-    # ════════════════════════════════════════════════════════════════════
+    # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     _tool(
         "generate_experimental_protocol",
         "Generate a complete experimental protocol from a biological hypothesis.",
@@ -824,9 +824,9 @@ TOOLS: list[Tool] = [
         },
         [],
     ),
-    # ════════════════════════════════════════════════════════════════════
+    # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     # CATEGORY 12: Session Intelligence (5 tools)
-    # ════════════════════════════════════════════════════════════════════
+    # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     _tool(
         "resolve_entity",
         "Resolve any biological identifier to canonical cross-database form.",
@@ -864,14 +864,14 @@ TOOLS: list[Tool] = [
         },
         ["goal"],
     ),
-    # ════════════════════════════════════════════════════════════════════
+    # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     # CATEGORY 13: Intelligence Layer (3 tools)
-    # ════════════════════════════════════════════════════════════════════
+    # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     _tool(
         "validate_reasoning_chain",
         "Verify a multi-step biological reasoning chain against primary databases.",
         {
-            "reasoning_chain": _str_prop("Arrow notation: 'KRAS → RAF → MEK → ERK → proliferation'"),
+            "reasoning_chain": _str_prop("Arrow notation: 'KRAS â†’ RAF â†’ MEK â†’ ERK â†’ proliferation'"),
             "verify_depth": _enum_prop("Verification depth.", ["quick", "standard", "deep"], "standard"),
         },
         ["reasoning_chain"],
@@ -895,9 +895,9 @@ TOOLS: list[Tool] = [
         },
         ["topic"],
     ),
-    # ════════════════════════════════════════════════════════════════════
+    # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     # CATEGORY 14: Tier 2 Extended Databases (7 tools)
-    # ════════════════════════════════════════════════════════════════════
+    # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     _tool(
         "get_biogrid_interactions",
         "BioGRID 2M+ manually curated protein-protein interactions from primary literature.",
@@ -968,9 +968,9 @@ TOOLS: list[Tool] = [
         },
         ["gene_symbol"],
     ),
-    # ════════════════════════════════════════════════════════════════════
+    # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     # CATEGORY 15: CRISPR Design Suite (5 tools)
-    # ════════════════════════════════════════════════════════════════════
+    # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     _tool(
         "design_crispr_guides",
         "Design CRISPR sgRNA guides with Doench 2016 efficiency scoring.",
@@ -985,7 +985,7 @@ TOOLS: list[Tool] = [
         "score_guide_efficiency",
         "Score an sgRNA using Doench 2016 RS2-inspired multi-feature model.",
         {
-            "guide_sequence": _str_prop("17–24nt guide RNA sequence."),
+            "guide_sequence": _str_prop("17â€“24nt guide RNA sequence."),
             "cas_variant": _enum_prop("Cas variant.", ["SpCas9", "SaCas9", "Cas12a"], "SpCas9"),
         },
         ["guide_sequence"],
@@ -1019,9 +1019,9 @@ TOOLS: list[Tool] = [
         },
         ["gene_symbol", "guide_sequence"],
     ),
-    # ════════════════════════════════════════════════════════════════════
+    # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     # CATEGORY 16: FDA Drug Safety Intelligence (4 tools)
-    # ════════════════════════════════════════════════════════════════════
+    # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     _tool(
         "query_adverse_events",
         "Query FDA FAERS adverse event reports for drug safety signals.",
@@ -1056,18 +1056,18 @@ TOOLS: list[Tool] = [
     ),
     _tool(
         "compare_drug_safety",
-        "Head-to-head safety comparison between 2–5 drugs using FDA FAERS.",
+        "Head-to-head safety comparison between 2â€“5 drugs using FDA FAERS.",
         {
             "drugs": {
                 "type": "array", "items": {"type": "string"},
-                "description": "List of 2–5 drug names.",
+                "description": "List of 2â€“5 drug names.",
             },
         },
         ["drugs"],
     ),
-    # ════════════════════════════════════════════════════════════════════
+    # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     # CATEGORY 17: Variant Interpreter (3 tools)
-    # ════════════════════════════════════════════════════════════════════
+    # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     _tool(
         "classify_variant",
         "Classify a genetic variant using ACMG/AMP 2015 guidelines (5-tier output).",
@@ -1098,9 +1098,9 @@ TOOLS: list[Tool] = [
         },
         [],
     ),
-    # ════════════════════════════════════════════════════════════════════
-    # CATEGORY 18: Innovations — NEW (7 tools)
-    # ════════════════════════════════════════════════════════════════════
+    # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    # CATEGORY 18: Innovations â€” NEW (7 tools)
+    # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     _tool(
         "bulk_gene_analysis",
         "Analyze one or two gene panels in parallel and return a cross-gene comparison "
@@ -1130,7 +1130,7 @@ TOOLS: list[Tool] = [
         "Fisher exact test pathway enrichment analysis for a gene list against KEGG/Reactome. "
         "Given a list of differentially expressed or mutated genes, identifies which pathways "
         "are statistically over-represented. Returns enriched pathways with p-values, "
-        "FDR correction, and gene overlap lists — essential for omics data interpretation.",
+        "FDR correction, and gene overlap lists â€” essential for omics data interpretation.",
         {
             "gene_list": {
                 "type": "array", "items": {"type": "string"},
@@ -1147,7 +1147,7 @@ TOOLS: list[Tool] = [
     ),
     _tool(
         "search_biorxiv",
-        "Search bioRxiv and medRxiv for recent preprints — access unpublished research "
+        "Search bioRxiv and medRxiv for recent preprints â€” access unpublished research "
         "up to 6 months before formal publication. Critical for staying current in "
         "fast-moving fields. Returns abstracts, author lists, posting date, "
         "DOI, and category tags. Can detect if a preprint has since been published.",
@@ -1165,7 +1165,7 @@ TOOLS: list[Tool] = [
     ),
     _tool(
         "get_protein_domain_structure",
-        "Retrieve protein domain architecture from InterPro — integrates PFam, SMART, "
+        "Retrieve protein domain architecture from InterPro â€” integrates PFam, SMART, "
         "PROSITE, CDD, and SUPERFAMILY domain annotations. Returns domain boundaries, "
         "domain family descriptions, 3D structure representatives, and known active/binding "
         "sites. Essential for understanding protein function from sequence alone.",
@@ -1487,9 +1487,9 @@ TOOLS = [
 ]
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # Hypothesis Handler
-# ─────────────────────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 _PUBLIC_TOOL_EXAMPLES: dict[str, list[dict[str, Any]]] = {
@@ -1809,9 +1809,9 @@ async def _generate_research_hypothesis(
     }
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # Session Intelligence Handlers
-# ─────────────────────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 async def _resolve_entity(query: str, hint_type: str = "gene") -> dict[str, Any]:
@@ -2037,245 +2037,9 @@ async def _dispatch_multi_omics_gene_report(gene_symbol: str) -> dict[str, Any]:
         return result
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Dispatcher — FIX #2: removed all duplicate import blocks
-# ─────────────────────────────────────────────────────────────────────────────
-
-
-async def _raw_dispatch_legacy(name: str, args: dict[str, Any]) -> Any:
-    """Raw dispatcher returning Python objects. Used by the query planner."""
-    # ── Core tool imports ──────────────────────────────────────────────────────
-    from biomcp.tools.advanced import (
-        get_gene_variants,
-        get_trial_details,
-        multi_omics_gene_report,
-        query_neuroimaging_datasets,
-        search_clinical_trials,
-        search_gene_expression,
-        search_scrna_datasets,
-    )
-    from biomcp.tools.crispr_tools import (
-        design_base_editor_guides,
-        design_crispr_guides,
-        get_crispr_repair_outcomes,
-        predict_off_target_sites,
-        score_guide_efficiency,
-    )
-    from biomcp.tools.databases import (
-        get_disgenet_associations,
-        get_gtex_expression,
-        get_omim_gene_diseases,
-        get_pharmgkb_variants,
-        get_string_interactions,
-        search_cbio_mutations,
-        search_gwas_catalog,
-    )
-    from biomcp.tools.drug_safety import (
-        analyze_safety_signals,
-        compare_drug_safety,
-        get_drug_label_warnings,
-        query_adverse_events,
-    )
-
-    # FIX #2: Single import of extended_databases (removed duplicate)
-    from biomcp.tools.extended_databases import (
-        get_biogrid_interactions,
-        get_encode_regulatory,
-        get_tcga_expression,
-        get_ucsc_splice_variants,
-        search_cellmarker,
-        search_metabolomics,
-        search_orphan_diseases,
-    )
-
-    # New innovation tools
-    from biomcp.tools.innovations import (
-        analyze_coexpression,
-        bulk_gene_analysis,
-        compute_pathway_enrichment,
-        get_cancer_hotspots,
-        get_protein_domain_structure,
-        predict_splice_impact,
-        search_biorxiv,
-    )
-    from biomcp.tools.intelligence import (
-        find_repurposing_candidates,
-        find_research_gaps,
-        validate_reasoning_chain,
-    )
-    from biomcp.tools.ncbi import get_gene_info, run_blast, search_pubmed
-    from biomcp.tools.nvidia_nim import design_protein_ligand, score_sequence_evo2
-    from biomcp.tools.pathways import (
-        get_compound_info,
-        get_drug_targets,
-        get_gene_disease_associations,
-        get_pathway_genes,
-        get_reactome_pathways,
-        search_pathways,
-    )
-    from biomcp.tools.proteins import (
-        get_alphafold_structure,
-        get_protein_info,
-        search_pdb_structures,
-        search_proteins,
-    )
-    from biomcp.tools.protocol_generator import (
-        estimate_statistical_power,
-        generate_experimental_protocol,
-        suggest_cell_lines,
-    )
-    from biomcp.tools.strategy_surface import (
-        biomarker_panel_design,
-        boltz2_workflow,
-        crispr_analysis,
-        drug_interaction_checker,
-        evo2_workflow,
-        find_protein,
-        genome_browser_snapshot,
-        network_enrichment,
-        pathway_analysis,
-        pharmacogenomics_report,
-        protein_binding_pocket,
-        protein_family_analysis,
-        rare_disease_diagnosis,
-        rnaseq_deconvolution,
-        structural_similarity,
-        variant_analysis,
-    )
-    from biomcp.tools.strategy_surface import (
-        drug_safety as drug_safety_workflow,
-    )
-    from biomcp.tools.variant_interpreter import (
-        classify_variant,
-        get_population_frequency,
-        lookup_clinvar_variant,
-    )
-
-    # FIX #2: Single import of verify and protocol tools (removed duplicates)
-    from biomcp.tools.verify import detect_database_conflicts, verify_biological_claim
-
-    DISPATCH: dict[str, Any] = {
-        # Literature
-        "search_pubmed": search_pubmed,
-        "get_gene_info": get_gene_info,
-        "run_blast": run_blast,
-        # Proteins
-        "get_protein_info": get_protein_info,
-        "search_proteins": search_proteins,
-        "get_alphafold_structure": get_alphafold_structure,
-        "search_pdb_structures": search_pdb_structures,
-        "find_protein": find_protein,
-        # Pathways
-        "search_pathways": search_pathways,
-        "get_pathway_genes": get_pathway_genes,
-        "get_reactome_pathways": get_reactome_pathways,
-        "pathway_analysis": pathway_analysis,
-        # Drug Discovery
-        "get_drug_targets": get_drug_targets,
-        "get_compound_info": get_compound_info,
-        "get_gene_disease_associations": get_gene_disease_associations,
-        # Genomics
-        "get_gene_variants": get_gene_variants,
-        "search_gene_expression": search_gene_expression,
-        "search_scrna_datasets": search_scrna_datasets,
-        # Clinical
-        "search_clinical_trials": search_clinical_trials,
-        "get_trial_details": get_trial_details,
-        # Advanced
-        "multi_omics_gene_report": multi_omics_gene_report,
-        "query_neuroimaging_datasets": query_neuroimaging_datasets,
-        "generate_research_hypothesis": _module_dispatch(
-            sys.modules[__name__], "_generate_research_hypothesis"
-        ),
-        # NVIDIA NIM
-        "predict_structure_boltz2": boltz2_workflow,
-        "generate_dna_evo2": evo2_workflow,
-        "score_sequence_evo2": score_sequence_evo2,
-        "design_protein_ligand": design_protein_ligand,
-        # Extended Databases
-        "get_omim_gene_diseases": get_omim_gene_diseases,
-        "get_string_interactions": get_string_interactions,
-        "get_gtex_expression": get_gtex_expression,
-        "search_cbio_mutations": search_cbio_mutations,
-        "search_gwas_catalog": search_gwas_catalog,
-        "get_disgenet_associations": get_disgenet_associations,
-        "get_pharmgkb_variants": get_pharmgkb_variants,
-        # Verification
-        "verify_biological_claim": verify_biological_claim,
-        "detect_database_conflicts": detect_database_conflicts,
-        # Experimental Design
-        "generate_experimental_protocol": generate_experimental_protocol,
-        "suggest_cell_lines": suggest_cell_lines,
-        "estimate_statistical_power": estimate_statistical_power,
-        # Session Intelligence
-        "session": _module_dispatch(sys.modules[__name__], "_session_workflow"),
-        "resolve_entity": _module_dispatch(sys.modules[__name__], "_resolve_entity"),
-        "get_session_knowledge_graph": _module_dispatch(
-            sys.modules[__name__], "_get_session_knowledge_graph"
-        ),
-        "find_biological_connections": _module_dispatch(
-            sys.modules[__name__], "_find_biological_connections"
-        ),
-        "export_research_session": _module_dispatch(
-            sys.modules[__name__], "_export_research_session"
-        ),
-        "plan_and_execute_research": _module_dispatch(
-            sys.modules[__name__], "_plan_and_execute_research"
-        ),
-        # Intelligence Layer
-        "validate_reasoning_chain": validate_reasoning_chain,
-        "find_repurposing_candidates": find_repurposing_candidates,
-        "find_research_gaps": find_research_gaps,
-        # Tier 2 Extended
-        "get_biogrid_interactions": get_biogrid_interactions,
-        "search_orphan_diseases": search_orphan_diseases,
-        "get_tcga_expression": get_tcga_expression,
-        "search_cellmarker": search_cellmarker,
-        "get_encode_regulatory": get_encode_regulatory,
-        "search_metabolomics": search_metabolomics,
-        "get_ucsc_splice_variants": get_ucsc_splice_variants,
-        # CRISPR
-        "crispr_analysis": crispr_analysis,
-        "design_crispr_guides": design_crispr_guides,
-        "score_guide_efficiency": score_guide_efficiency,
-        "predict_off_target_sites": predict_off_target_sites,
-        "design_base_editor_guides": design_base_editor_guides,
-        "get_crispr_repair_outcomes": get_crispr_repair_outcomes,
-        # FDA Drug Safety
-        "drug_safety": drug_safety_workflow,
-        "query_adverse_events": query_adverse_events,
-        "analyze_safety_signals": analyze_safety_signals,
-        "get_drug_label_warnings": get_drug_label_warnings,
-        "compare_drug_safety": compare_drug_safety,
-        # Variant Interpreter
-        "variant_analysis": variant_analysis,
-        "classify_variant": classify_variant,
-        "get_population_frequency": get_population_frequency,
-        "lookup_clinvar_variant": lookup_clinvar_variant,
-        # Innovations
-        "bulk_gene_analysis": bulk_gene_analysis,
-        "compute_pathway_enrichment": compute_pathway_enrichment,
-        "search_biorxiv": search_biorxiv,
-        "get_protein_domain_structure": get_protein_domain_structure,
-        "analyze_coexpression": analyze_coexpression,
-        "get_cancer_hotspots": get_cancer_hotspots,
-        "predict_splice_impact": predict_splice_impact,
-        # Strategy additions
-        "drug_interaction_checker": drug_interaction_checker,
-        "protein_binding_pocket": protein_binding_pocket,
-        "biomarker_panel_design": biomarker_panel_design,
-        "pharmacogenomics_report": pharmacogenomics_report,
-        "protein_family_analysis": protein_family_analysis,
-        "network_enrichment": network_enrichment,
-        "rnaseq_deconvolution": rnaseq_deconvolution,
-        "structural_similarity": structural_similarity,
-        "rare_disease_diagnosis": rare_disease_diagnosis,
-        "genome_browser_snapshot": genome_browser_snapshot,
-    }
-
-    if name not in DISPATCH:
-        raise ValueError(f"Unknown tool '{name}'")
-    return await DISPATCH[name](**args)
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# Dispatcher â€” FIX #2: removed all duplicate import blocks
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 def _module_dispatch(module: Any, attr_name: str) -> Callable[..., Any]:
@@ -2449,7 +2213,7 @@ async def _raw_dispatch(name: str, args: dict[str, Any]) -> Any:
 
 
 async def _dispatch(name: str, args: dict[str, Any]) -> str:
-    """MCP-facing dispatcher — wraps results in JSON envelopes."""
+    """MCP-facing dispatcher â€” wraps results in JSON envelopes."""
     try:
         result = await _raw_dispatch(name, args)
         return format_success(name, result)
@@ -2626,9 +2390,22 @@ def _start_cache_warmer(transport_mode: str) -> asyncio.Task[dict[str, Any]] | N
     return asyncio.create_task(_warm_common_gene_caches(genes), name="biomcp-cache-warmer")
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# MCP Server — FIX #10: hardened against missing mcp.types.Icon
-# ─────────────────────────────────────────────────────────────────────────────
+def _warn_ephemeral_session_store(transport_mode: str) -> bool:
+    if transport_mode != "http":
+        return False
+    if os.getenv("BIOMCP_SESSION_STORE_DIR", "").strip():
+        return False
+
+    logger.warning(
+        "   Session store: BIOMCP_SESSION_STORE_DIR is not set in HTTP mode; "
+        "saved sessions will use local ephemeral disk and may disappear after restart or deploy"
+    )
+    return True
+
+
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# MCP Server â€” FIX #10: hardened against missing mcp.types.Icon
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 def create_server() -> Server:
@@ -2638,7 +2415,7 @@ def create_server() -> Server:
 
     server_kwargs: dict[str, Any] = {
         "instructions": (
-            "Heuris-BioMCP — Connect ChatGPT, Claude, and other MCP clients "
+            "Heuris-BioMCP â€” Connect ChatGPT, Claude, and other MCP clients "
             "to a curated strategic surface of about 30 life-science tools spanning literature, "
             "genomics, proteomics, clinical data, CRISPR, drug safety, variant interpretation, "
             "and translational workflow design."
@@ -2646,7 +2423,7 @@ def create_server() -> Server:
         "website_url": _server_website_url(),
     }
 
-    # Only add website_url if mcp SDK supports it (≥1.3.0)
+    # Only add website_url if mcp SDK supports it (â‰¥1.3.0)
     try:
         from mcp.types import Icon
 
@@ -2706,20 +2483,21 @@ async def _run() -> None:
     )
 
     n_tools = len(TOOLS)
-    logger.info(f"🧬 {SERVER_DISPLAY_NAME} v{__version__} starting — {n_tools} tools registered")
-    logger.info(f"   NCBI key : {'✓' if os.getenv('NCBI_API_KEY') else '✗ (3 req/s)'}")
-    logger.info(f"   Boltz-2  : {'✓' if os.getenv('NVIDIA_BOLTZ2_API_KEY') else '✗'}")
-    logger.info(f"   Evo2     : {'✓' if os.getenv('NVIDIA_EVO2_API_KEY') else '✗'}")
-    logger.info(f"   BioGRID  : {'✓' if os.getenv('BIOGRID_API_KEY') else '✗'}")
+    logger.info(f"ðŸ§¬ {SERVER_DISPLAY_NAME} v{__version__} starting â€” {n_tools} tools registered")
+    logger.info(f"   NCBI key : {'âœ“' if os.getenv('NCBI_API_KEY') else 'âœ— (3 req/s)'}")
+    logger.info(f"   Boltz-2  : {'âœ“' if os.getenv('NVIDIA_BOLTZ2_API_KEY') else 'âœ—'}")
+    logger.info(f"   Evo2     : {'âœ“' if os.getenv('NVIDIA_EVO2_API_KEY') else 'âœ—'}")
+    logger.info(f"   BioGRID  : {'âœ“' if os.getenv('BIOGRID_API_KEY') else 'âœ—'}")
 
     server = create_server()
     transport_mode = os.getenv("BIOMCP_TRANSPORT", "stdio")
     http_port      = int(os.getenv("BIOMCP_HTTP_PORT", "8080"))
+    _warn_ephemeral_session_store(transport_mode)
     cache_warm_task = _start_cache_warmer(transport_mode)
 
     try:
         if transport_mode == "http":
-            logger.info(f"   🌐 HTTP mode — port {http_port}")
+            logger.info(f"   ðŸŒ HTTP mode â€” port {http_port}")
             from mcp.server.sse import SseServerTransport
             from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
             from starlette.applications import Starlette
@@ -2797,7 +2575,7 @@ async def _run() -> None:
             import uvicorn
             await uvicorn.Server(uvicorn.Config(app, host="0.0.0.0", port=http_port)).serve()
         else:
-            logger.info("   📟 STDIO mode")
+            logger.info("   ðŸ“Ÿ STDIO mode")
             async with stdio_server() as (read_stream, write_stream):
                 await server.run(
                     read_stream, write_stream,
@@ -2823,3 +2601,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+

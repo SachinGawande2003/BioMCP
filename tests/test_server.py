@@ -440,6 +440,36 @@ class TestStartupCacheWarming:
         assert seen == [["TP53", "EGFR"]]
 
 
+class TestStartupWarnings:
+    def test_warn_ephemeral_session_store_only_for_http_without_override(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        warnings: list[str] = []
+
+        monkeypatch.delenv("BIOMCP_SESSION_STORE_DIR", raising=False)
+        monkeypatch.setattr(server_module.logger, "warning", lambda message: warnings.append(message))
+
+        assert server_module._warn_ephemeral_session_store("http") is True
+        assert len(warnings) == 1
+        assert "BIOMCP_SESSION_STORE_DIR" in warnings[0]
+
+    def test_warn_ephemeral_session_store_skips_stdio_or_explicit_directory(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        warnings: list[str] = []
+
+        monkeypatch.setattr(server_module.logger, "warning", lambda message: warnings.append(message))
+
+        monkeypatch.setenv("BIOMCP_SESSION_STORE_DIR", ".biomcp_sessions")
+        assert server_module._warn_ephemeral_session_store("http") is False
+
+        monkeypatch.delenv("BIOMCP_SESSION_STORE_DIR", raising=False)
+        assert server_module._warn_ephemeral_session_store("stdio") is False
+        assert warnings == []
+
+
 class TestStreamingProgress:
     @pytest.mark.asyncio
     async def test_multi_omics_dispatch_streams_progress_notifications(

@@ -184,6 +184,7 @@ async def test_query_neuroimaging_handles_failure_gracefully(mock_http_client, m
 async def test_multi_omics_gene_report_handles_partial_layer_failures():
     literature = {
         "total_found": 2,
+        "_cache": {"status": "cached"},
         "articles": [
             {
                 "pmid": "4001",
@@ -195,7 +196,10 @@ async def test_multi_omics_gene_report_handles_partial_layer_failures():
     }
 
     with (
-        patch("biomcp.tools.ncbi.get_gene_info", new=AsyncMock(return_value={"symbol": "MYC"})),
+        patch(
+            "biomcp.tools.ncbi.get_gene_info",
+            new=AsyncMock(return_value={"symbol": "MYC", "_cache": {"status": "cached"}}),
+        ),
         patch("biomcp.tools.ncbi.search_pubmed", new=AsyncMock(return_value=literature)),
         patch(
             "biomcp.tools.pathways.get_reactome_pathways",
@@ -203,7 +207,7 @@ async def test_multi_omics_gene_report_handles_partial_layer_failures():
         ),
         patch(
             "biomcp.tools.pathways.get_drug_targets",
-            new=AsyncMock(return_value={"drugs": [{"name": "DrugX"}]}),
+            new=AsyncMock(return_value={"drugs": [{"name": "DrugX"}], "_cache": {"status": "cached"}}),
         ),
         patch(
             "biomcp.tools.pathways.get_gene_disease_associations",
@@ -226,6 +230,9 @@ async def test_multi_omics_gene_report_handles_partial_layer_failures():
     assert result["layers"]["genomics"]["symbol"] == "MYC"
     assert result["layers"]["literature"]["total_publications"] == 2
     assert result["layers"]["literature"]["recent_papers"][0]["pmid"] == "4001"
+    assert "_cache" not in result["layers"]["genomics"]
+    assert "_cache" not in result["layers"]["literature"]
+    assert "_cache" not in result["layers"]["drug_targets"]
     assert result["layers"]["reactome"]["status"] == "failed"
     assert result["layers"]["reactome"]["error"] == "Reactome timeout"
     assert result["layers"]["expression"]["status"] == "failed"
@@ -302,6 +309,7 @@ async def test_multi_omics_gene_report_streams_layers_as_they_finish():
     ]
     assert result["layers"]["literature"]["total_publications"] == 1
     assert result["layers"]["genomics"]["symbol"] == "MYC"
+
 
 
 # ── Integration ──────────────────────────────────────────────────────────────

@@ -2,7 +2,15 @@ from __future__ import annotations
 
 from typing import Any
 
-from biomcp.core.query_planner import AdaptiveQueryPlanner, _load_plan_registry
+import pytest
+
+from biomcp.core.query_planner import (
+    _PLAN_REGISTRY_PATH,
+    AdaptiveQueryPlanner,
+    PlanNode,
+    ResearchPlan,
+    _load_plan_registry,
+)
 
 
 async def _noop_dispatch(tool_name: str, tool_args: dict[str, Any]) -> dict[str, Any]:
@@ -20,6 +28,13 @@ def test_plan_registry_contains_expected_workflows():
         "protein_structure",
         "literature_fallback",
     }.issubset(workflows)
+
+
+def test_plan_registry_file_is_json_registry():
+    text = _PLAN_REGISTRY_PATH.read_text(encoding="utf-8").lstrip()
+
+    assert _PLAN_REGISTRY_PATH.suffix == ".json"
+    assert text.startswith("{")
 
 
 def test_drug_target_plan_comes_from_registry_and_honors_depth():
@@ -73,3 +88,27 @@ def test_literature_fallback_plan_uses_goal_template():
         "generate_research_hypothesis",
     ]
     assert plan.nodes[0].tool_args["query"] == "Investigate ferroptosis in glioblastoma"
+
+
+@pytest.mark.asyncio
+async def test_execute_strips_nested_cache_metadata_from_results():
+    async def _cached_dispatch(tool_name: str, tool_args: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "tool": tool_name,
+            "args": tool_args,
+            "_cache": {"status": "cached"},
+        }
+
+    planner = AdaptiveQueryPlanner(dispatcher=_cached_dispatch)
+    plan = ResearchPlan(
+        plan_id="plan-1",
+        goal="Test cache stripping",
+        strategy="unit test",
+        nodes=[
+            PlanNode(node_id="n1", tool_name="search_pubmed", tool_args={"query": "EGFR"}),
+        ],
+    )
+
+    result = await planner.execute(plan)
+
+    assert "_cache" not in result["results"]["n1"]

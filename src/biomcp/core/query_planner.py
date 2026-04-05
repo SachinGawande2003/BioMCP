@@ -20,10 +20,7 @@ from uuid import uuid4
 
 from loguru import logger
 
-try:
-    import yaml  # type: ignore[import-untyped]
-except ImportError:  # pragma: no cover - exercised when PyYAML is unavailable
-    yaml = None
+from biomcp.utils import strip_cache_metadata
 
 
 class NodeStatus(StrEnum):
@@ -129,23 +126,20 @@ class ResearchPlan:
         }
 
 
-_PLAN_REGISTRY_PATH = Path(__file__).with_name("plan_registry.yaml")
+_PLAN_REGISTRY_PATH = Path(__file__).with_name("plan_registry.json")
 _PLACEHOLDER_PATTERN = re.compile(r"\$\{([a-zA-Z0-9_]+)\}")
 _PLAN_REGISTRY: dict[str, Any] | None = None
 
 
 def _parse_plan_registry(text: str) -> dict[str, Any]:
-    if yaml is not None:
-        loaded = yaml.safe_load(text)
-    else:
-        loaded = json.loads(text)
+    loaded = json.loads(text)
 
     if not isinstance(loaded, dict):
-        raise ValueError("plan_registry.yaml must define a top-level mapping")
+        raise ValueError("plan_registry.json must define a top-level mapping")
 
     workflows = loaded.get("workflows")
     if not isinstance(workflows, dict) or not workflows:
-        raise ValueError("plan_registry.yaml must define a non-empty 'workflows' mapping")
+        raise ValueError("plan_registry.json must define a non-empty 'workflows' mapping")
 
     return loaded
 
@@ -413,7 +407,7 @@ class AdaptiveQueryPlanner:
 
             for node in level:
                 if node.status == NodeStatus.COMPLETE:
-                    all_results[node.node_id] = node.result
+                    all_results[node.node_id] = strip_cache_metadata(node.result)
 
         elapsed = round(time.monotonic() - started, 2)
         execution_summary = plan.summary()

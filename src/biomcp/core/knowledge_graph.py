@@ -109,6 +109,8 @@ class SessionKnowledgeGraph:
         self._edges: dict[str, SKGEdge] = {}
         # FIX: Lock created inside __init__, within async context guarantee
         self._lock  = asyncio.Lock()
+        self._max_nodes = int(os.getenv("BIOMCP_SKG_MAX_NODES", "10000"))
+        self._max_edges = int(os.getenv("BIOMCP_SKG_MAX_EDGES", "50000"))
 
         self._label_index:  dict[str, str]           = {}
         self._alias_index:  dict[str, str]            = {}
@@ -118,6 +120,25 @@ class SessionKnowledgeGraph:
         self._tool_calls:   list[dict[str, Any]]      = []
 
         logger.info("🧬 Session Knowledge Graph initialised")
+
+    def _overflow_placeholder_node(
+        self,
+        label: str,
+        node_type: NodeType,
+        properties: dict[str, Any] | None,
+        aliases: list[str] | None,
+        source: str,
+        confidence: float,
+    ) -> SKGNode:
+        return SKGNode(
+            node_id=f"overflow:{node_type.value}:{label.strip().lower()}",
+            node_type=node_type,
+            label=label.strip(),
+            properties=properties or {},
+            aliases=aliases or [],
+            sources=[source],
+            confidence=confidence,
+        )
 
     async def upsert_node(
         self,
@@ -149,6 +170,19 @@ class SessionKnowledgeGraph:
                 for alias in (aliases or []):
                     self._alias_index[alias.lower()] = existing_id
                 return node
+
+            if len(self._nodes) >= self._max_nodes:
+                logger.warning(
+                    f"[SKG] Max node count {self._max_nodes} reached, skipping upsert for '{label.strip()}'"
+                )
+                return self._overflow_placeholder_node(
+                    label,
+                    node_type,
+                    properties,
+                    aliases,
+                    source,
+                    confidence,
+                )
 
             node_id = f"{node_type.value}:{uuid4().hex[:8]}"
             node = SKGNode(
@@ -183,6 +217,13 @@ class SessionKnowledgeGraph:
         tgt_node = await self.upsert_node(target_label, target_type, source=source)
 
         async with self._lock:
+            if src_node.node_id not in self._nodes or tgt_node.node_id not in self._nodes:
+                logger.warning(
+                    f"[SKG] Skipping edge {edge_type.value} between '{source_label}' and "
+                    f"'{target_label}' because a node limit was reached"
+                )
+                return None
+
             for eid in self._adj_out[src_node.node_id]:
                 e = self._edges.get(eid)
                 if e and e.edge_type == edge_type and e.target_id == tgt_node.node_id:
@@ -190,6 +231,13 @@ class SessionKnowledgeGraph:
                     e.evidence.extend(ev for ev in (evidence or []) if ev not in e.evidence)
                     e.properties.update(properties or {})
                     return e
+
+            if len(self._edges) >= self._max_edges:
+                logger.warning(
+                    f"[SKG] Max edge count {self._max_edges} reached, skipping edge "
+                    f"{edge_type.value} between '{source_label}' and '{target_label}'"
+                )
+                return None
 
             edge_id = f"E:{uuid4().hex[:8]}"
             edge = SKGEdge(
@@ -458,6 +506,11 @@ class SessionKnowledgeGraph:
                 self._clear_unlocked()
 
             for raw_node in nodes:
+                if len(self._nodes) >= self._max_nodes:
+                    logger.warning(
+                        f"[SKG] Restore capped at {self._max_nodes} nodes; remaining nodes skipped"
+                    )
+                    break
                 node_type = NodeType(raw_node["node_type"])
                 node = SKGNode(
                     node_id=raw_node["node_id"],
@@ -472,6 +525,16 @@ class SessionKnowledgeGraph:
                 self._nodes[node.node_id] = node
 
             for raw_edge in edges:
+                if len(self._edges) >= self._max_edges:
+                    logger.warning(
+                        f"[SKG] Restore capped at {self._max_edges} edges; remaining edges skipped"
+                    )
+                    break
+                if (
+                    raw_edge["source_id"] not in self._nodes
+                    or raw_edge["target_id"] not in self._nodes
+                ):
+                    continue
                 edge_type = EdgeType(raw_edge["edge_type"])
                 edge = SKGEdge(
                     edge_id=raw_edge["edge_id"],

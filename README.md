@@ -216,6 +216,12 @@ Or manually:
 4. Set build command: `pip install -r requirements.txt && pip install -e .`
 5. Set start command: `BIOMCP_TRANSPORT=http BIOMCP_HTTP_PORT=$PORT python -m biomcp`
 
+### Hosted Deployment Limitations
+
+- Session snapshots saved through the `session` tool are only durable if `BIOMCP_SESSION_STORE_DIR` points to persistent storage.
+- On Render free tier, the default local directory uses ephemeral disk and will be wiped on restart, redeploy, or scale-to-zero wake-up.
+- If you need persistent saved sessions, set `BIOMCP_SESSION_STORE_DIR` to a mounted persistent path or move session persistence behind an external store before relying on cross-session restore.
+
 ### Option 3: Local Installation
 
 #### Prerequisites
